@@ -1,0 +1,98 @@
+diff --git a/src/bin/simulation.rs b/src/bin/simulation.rs
+index 81a22be..20843dc 100644
+--- a/src/bin/simulation.rs
++++ b/src/bin/simulation.rs
+@@ -280,6 +280,8 @@ fn flpsi<Flarge: FiniteField, Fsmall: FiniteField, const P: bool>(
+     verbose: bool,
+ ) {
+     let mut rng = AesRng::new();
++    // offline / setup phase: VOLE-OT setup + garbling + TLPSI construction (data-independent)
++    let start_offline = Instant::now();
+     let (ot_sender, ot_receiver) =
+         ot::setup_dummy_voleot::<wykw::Sender<F128b>, wykw::Receiver<F128b>, _>(&mut rng);
+ 
+@@ -296,6 +298,7 @@ fn flpsi<Flarge: FiniteField, Fsmall: FiniteField, const P: bool>(
+             &mut rng,
+             verbose,
+         );
++    let elapsed_offline = start_offline.elapsed();
+     let idx = m / 2;
+     let input: Vec<_> = orig_inputs[idx].iter().map(|x| *x == 1).collect();
+ 
+@@ -352,13 +355,13 @@ fn flpsi<Flarge: FiniteField, Fsmall: FiniteField, const P: bool>(
+     };
+     if csv {
+         println!(
+-            "flpsi, {}, {}, {}, {}, {:?}, {:?}, {:?} KB, {}",
+-            weight, subsample_count, t, m, elapsed, recv_dur, comm_u64, fpr
++            "flpsi, {}, {}, {}, {}, {:?}, {:?}, {:?}, {:?} KB, {}",
++            weight, subsample_count, t, m, elapsed_offline, elapsed, recv_dur, comm_u64, fpr
+         );
+     } else {
+         println!(
+-            "simtype: flpsi, weight: {}, ss_count: {}, t: {}, m: {}, total duration: {:?}, recv duration: {:?}, communication: {:?} KB, fpr: {}",
+-            weight, subsample_count, t, m, elapsed, recv_dur, comm_u64, fpr
++            "simtype: flpsi, weight: {}, ss_count: {}, t: {}, m: {}, offline: {:?}, online total: {:?}, recv duration: {:?}, communication: {:?} KB, fpr: {}",
++            weight, subsample_count, t, m, elapsed_offline, elapsed, recv_dur, comm_u64, fpr
+         );
+     }
+ }
+diff --git a/src/flpsi.rs b/src/flpsi.rs
+index e4eb265..2b17f35 100644
+--- a/src/flpsi.rs
++++ b/src/flpsi.rs
+@@ -52,15 +52,53 @@ pub fn setup_dummy_flpsi<
+     Receiver<Flarge, Fsmall, OTR, P>,
+     Vec<Vec<u8>>,
+ ) {
++    // Generate `m` random 128-bit inputs, then run the real setup on them.
+     let rvec = |rng: &mut R| {
+         let mut tmp = vec![0u8; 128];
+         rng.fill_bytes(&mut tmp);
+         tmp.iter_mut().for_each(|x| *x %= 2);
+         tmp
+     };
++    let orig_inputs: Vec<Vec<u8>> = (0..m).map(|_| rvec(rng)).collect();
++    setup_flpsi_with_inputs::<Flarge, Fsmall, R, OTS, OTR, P>(
++        weight,
++        subsample_count,
++        t,
++        orig_inputs,
++        ots,
++        otr,
++        rng,
++        verbose,
++    )
++}
++
++/// Same as [`setup_dummy_flpsi`] but runs on caller-provided database inputs
++/// (each a 128-entry `0`/`1` vector) instead of generating random ones. This is
++/// what the `fingerprint` binary uses to run the protocol on real codes.
++pub fn setup_flpsi_with_inputs<
++    Flarge: FiniteField,
++    Fsmall: FiniteField,
++    R: RngCore + CryptoRng,
++    OTS: ot::Sender<Msg = Block>,
++    OTR: ot::Receiver<Msg = Block>,
++    const P: bool,
++>(
++    weight: usize,
++    subsample_count: usize,
++    t: usize,
++    orig_inputs: Vec<Vec<u8>>,
++    ots: OTS,
++    otr: OTR,
++    rng: &mut R,
++    verbose: bool,
++) -> (
++    Sender<Flarge, Fsmall, OTS>,
++    Receiver<Flarge, Fsmall, OTR, P>,
++    Vec<Vec<u8>>,
++) {
++    let m = orig_inputs.len();
+     let gb = KeyHolder::new(rng);
+     let subsampler = SubSampler::new(128, weight, subsample_count, rng);
+-    let orig_inputs: Vec<Vec<u8>> = (0..m).map(|_| rvec(rng)).collect();
+ 
+     if verbose {
+         let bytes_large = Flarge::ByteReprLen::to_usize();

@@ -1,0 +1,12 @@
+FROM blindtouch-base:latest
+
+# client notebook + training notebooks. shared_data and dataset are bind-mounted
+# at runtime (see docker-compose.yml), not copied in.
+COPY client/ /workspace/client/
+COPY training/ /workspace/training/
+
+EXPOSE 8888
+
+CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", \
+     "--no-browser", "--allow-root", "--NotebookApp.token=blindtouch", \
+     "--notebook-dir=/workspace"]

@@ -1,0 +1,58 @@
+# 3-container Blind-Touch demo: client (Jupyter) + main + cluster1 (Flask/HE).
+# A single shared volume (shared_ckks) stands in for the paper's NAS: keys,
+# ciphertexts, models, and intermediate results are all written here and are
+# visible to every container at /workspace/shared_data.
+services:
+  client:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    image: blindtouch-client:latest
+    container_name: blindtouch-client
+    ports:
+      - "8888:8888"
+    volumes:
+      - shared_ckks:/workspace/shared_data
+      - ./dataset:/workspace/dataset:ro
+      - ./neuralpsi:/workspace/neuralpsi   # NeuralPSI quantiser + FLPSI-surrogate eval (FLPSI variant)
+    networks:
+      - blindtouch-net
+    shm_size: "1g"            # TF/training needs more than the 64MB default /dev/shm
+    environment:
+      - MAIN_HOST=main
+      - MAIN_PORT=8090
+
+  main:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.main
+    image: blindtouch-main:latest
+    container_name: blindtouch-main
+    ports:
+      - "8090:8090"
+    volumes:
+      - shared_ckks:/workspace/shared_data
+    networks:
+      - blindtouch-net
+    restart: "no"             # don't crash-loop before keys exist; we start it in Phase 5
+
+  cluster1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cluster1
+    image: blindtouch-cluster1:latest
+    container_name: blindtouch-cluster1
+    # no host port needed; main reaches it over the internal network as http://cluster1:8090
+    volumes:
+      - shared_ckks:/workspace/shared_data
+    networks:
+      - blindtouch-net
+    restart: "no"
+
+volumes:
+  shared_ckks:
+    driver: local
+
+networks:
+  blindtouch-net:
+    driver: bridge

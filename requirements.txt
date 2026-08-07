@@ -1,0 +1,9 @@
+# Core pipeline
+torch>=2.0
+numpy>=1.24
+pillow>=9.0
+
+# Demo
+streamlit>=1.30
+pandas>=2.0
+altair>=5.0

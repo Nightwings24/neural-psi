@@ -1,0 +1,51 @@
+# ---- Datasets (download separately; see README) ----
+dataset/
+demo/data/
+*.bmp
+*.BMP
+
+# ---- Large raw arrays: regenerate with src/01b_extract_dir.py ----
+src/data/x_*.npy
+src/data/*_96.npy
+src/data/feature_model.pt
+# everything else in src/data/ is small and intentionally committed
+# (trained 224 model, held-out split, cached codes) so the demo runs out of the box
+
+# ---- Rust build output & upstream clone ----
+crypto/flash-psi/
+target/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+bt-demo/
+bt-gpu-sbx/
+
+# ---- LaTeX build artifacts ----
+*.aux
+*.log
+*.out
+*.toc
+*.nav
+*.snm
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# ---- Runtime state (never commit) ----
+shared_data/
+*.key
+*.pem
+logs/
+
+# ---- OS / editor ----
+.DS_Store
+*.swp
+.vscode/
+.idea/

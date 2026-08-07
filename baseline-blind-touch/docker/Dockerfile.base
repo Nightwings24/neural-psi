@@ -1,0 +1,65 @@
+# Blind-Touch base image: SEAL-Python (CKKS HE) + TensorFlow 2.11 stack
+# Ubuntu 20.04 ships Python 3.8 as the default python3 — no alternatives juggling needed.
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# System deps. cmake/build-essential for the SEAL C++ build; libgl/glib for opencv;
+# iputils-ping so we can sanity-check container networking.
+RUN apt-get update && apt-get install -y \
+    python3 python3-dev python3-pip \
+    git build-essential cmake \
+    libgl1-mesa-glx libglib2.0-0 \
+    wget curl ca-certificates iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# ---- SEAL-Python (the CKKS homomorphic-encryption library) ----
+# numpy + pybind11 must exist before building the binding.
+RUN python3 -m pip install numpy==1.24.1 pybind11==2.10.4
+RUN git clone https://github.com/Huelse/SEAL-Python.git /opt/SEAL-Python
+WORKDIR /opt/SEAL-Python
+RUN git submodule update --init --recursive
+# Build Microsoft SEAL itself (static lib). -j2 to avoid OOM on a memory-tight host.
+RUN cd SEAL && cmake -S . -B build \
+      -DSEAL_USE_MSGSL=OFF \
+      -DSEAL_USE_ZLIB=OFF \
+      -DSEAL_USE_ZSTD=OFF && \
+    cmake --build build -j2
+# Build the pybind11 binding (.so lands in the SEAL-Python root).
+RUN python3 setup.py build_ext -i
+# Put the .so on the import path and fail the build immediately if it doesn't import.
+RUN cp seal.*.so /usr/lib/python3/dist-packages/ && \
+    python3 -c "import seal; print('SEAL import OK')"
+
+# ---- ML / app stack ----
+# NOTE: the repo's requirements.txt pins BOTH tensorflow==2.11.0 and keras==2.13.1,
+# which is contradictory (TF 2.11 ships and requires its own bundled keras 2.11).
+# Installing standalone keras 2.13 breaks `import tensorflow`. We use TF 2.11's
+# bundled keras instead. flask + aiohttp are needed by the server but are NOT in
+# requirements.txt.
+# --default-timeout/--retries: TensorFlow is a large download and PyPI read-timed-out
+# on the first build attempt.
+RUN python3 -m pip install --default-timeout=300 --retries 10 tensorflow==2.11.0
+RUN python3 -m pip install --default-timeout=300 --retries 10 \
+        scikit-learn==1.2.1 \
+        pandas==1.5.3 \
+        imgaug==0.4.0 \
+        opencv-python-headless==4.5.3.56 \
+        requests==2.28.2 \
+        flask \
+        aiohttp \
+        jupyter
+
+# imgaug's deps drag in a second OpenCV distribution (opencv-python 4.13) on top of
+# the pinned headless build; the two share the cv2/ dir and clobber each other, so
+# `import cv2` dies with a gapi circular-import error. Remove both and reinstall ONLY
+# the pinned headless build so cv2 imports cleanly.
+RUN python3 -m pip uninstall -y opencv-python opencv-python-headless && \
+    python3 -m pip install --default-timeout=300 --retries 10 opencv-python-headless==4.5.3.56 && \
+    python3 -c "import cv2, imgaug; print('cv2', cv2.__version__, 'import OK')"
+
+WORKDIR /workspace

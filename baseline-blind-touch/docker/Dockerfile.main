@@ -1,0 +1,13 @@
+FROM blindtouch-base:latest
+
+# Main server: receives the encrypted query from the client, fans out to the
+# cluster(s), compresses (adds) their results, returns the encrypted score.
+COPY server/main/ /workspace/main/
+
+WORKDIR /workspace/main
+EXPOSE 8090
+
+# NOTE: main/service.py loads the public + galois keys at import time, so this
+# container only starts cleanly AFTER the client has generated keys into the
+# shared volume. Bring it up in Phase 5, not before.
+CMD ["python3", "app.py"]

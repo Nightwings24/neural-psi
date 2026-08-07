@@ -1,0 +1,13 @@
+FROM blindtouch-base:latest
+
+# Cluster 1: performs the HE inference (sub -> square -> FC1) on the encrypted
+# query against its registered ciphertext, saves the encrypted partial result.
+COPY server/cluster1/ /workspace/cluster1/
+
+WORKDIR /workspace/cluster1
+EXPOSE 8090
+
+# NOTE: cluster1/service.py loads the trained model, all keys, and the registered
+# ciphertext at IMPORT time. It only starts cleanly AFTER training + key/ctxt
+# generation have populated the shared volume. Bring it up in Phase 5.
+CMD ["python3", "app.py"]
