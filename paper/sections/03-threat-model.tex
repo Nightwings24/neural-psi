@@ -1,0 +1,47 @@
+\section{Threat Model and Goals}
+\label{sec:threat}
+
+\paragraph{Parties and inputs.} A \emph{client} device holds a freshly captured fingerprint and
+runs the feature extractor and quantiser locally, producing $\xt \in \{0,1\}^{d}$. A
+\emph{server} holds a database $D = \{(\yt_i, \ell_i)\}_{i \in [N]}$ of enrolled codes and their
+labels, plus a PRF key $k$. The client learns the labels of matching records; the server learns
+nothing. The ideal functionality realising this is stated as
+$\Fnpsi$ in \S\ref{sec:functionality}, and what the protocol leaks beyond it is stated as
+$\mathcal{L}$ in \S\ref{sec:leakage} --- we defer both to the security section so they can be
+read next to the proof.
+
+\paragraph{Adversary.} We assume a \emph{semi-honest} adversary with static corruption of one
+party: it follows the protocol but tries to infer more than its output. Malicious security is out
+of scope (\S\ref{sec:security}). We assume the standard LPN and PRF assumptions underlying the
+sub-protocols.
+
+\paragraph{Goals.}
+\begin{description}\itemsep2pt
+\item[G1. Query confidentiality.] The server does not learn $\xt$, nor the biometric behind it.
+\item[G2. Database confidentiality.] The client learns no more than $\mathcal{L}_{\mathsf{C}}$ of
+      \eqref{eq:leakC} --- which is \emph{more} than ``the matched label'', and we say so rather
+      than claiming otherwise.
+\item[G3. Scale.] Cost linear in $N$, with no per-client key material of consequence and no
+      structural packing ceiling.
+\end{description}
+
+\paragraph{Deployment assumptions, stated explicitly.} Three assumptions do real work and are
+easy to leave implicit.
+
+\emph{Sensor attestation.} The extractor and quantiser run on the client in plaintext by design.
+From the server's perspective $\xt$ is therefore a $d$-bit string the client chose, and nothing
+in the protocol binds it to a live finger. Deployments must attest the sensor; without that, the
+system's security is bounded by the code-guessing analysis of \S\ref{sec:attacks} rather than by
+biometric entropy.
+
+\emph{Rate limiting.} Per-account \emph{and} per-relying-party limits are required. We show in
+\S\ref{sec:attacks} that they do not mitigate the strongest attack at large $N$, which succeeds
+on the first attempt; they are necessary, not sufficient.
+
+\emph{Templates at rest.} The protocol protects data in transit. The stored code is a separate
+question with a worse answer, analysed against ISO/IEC 24745 in \S\ref{sec:atrest}. We treat full
+at-rest confidentiality against a compromised server as out of scope and state the resulting
+limitation plainly rather than resolving it.
+
+\paragraph{Out of scope.} Liveness detection and presentation-attack detection; malicious-model
+security; side channels on the client device; and availability.

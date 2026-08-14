@@ -1,0 +1,78 @@
+\section{Preliminaries}
+\label{sec:prelim}
+
+\subsection{Notation}
+
+\begin{table}[h]
+\centering
+\caption{Notation. Symbols are used consistently throughout; in particular $d$ always denotes
+the code length and never a distance bound.}
+\label{tab:notation}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+$d$ & code length, $=128$ & $N$ & database size (records) \\
+$T$ & sub-samples per query, $=64$ & $w$ & positions per sub-sample mask \\
+$\theta$ & sub-sample collisions to accept & $t$ & mismatches tolerated per sub-sample \\
+$H$ & Hamming distance between codes & $q(H)$ & per-sub-sample collision probability \\
+$\mathbf{e}\in\mathbb{R}^{16}$ & CNN embedding & $\xt,\yt\in\{0,1\}^{d}$ & client, server codes \\
+$\mathbf{P},\boldsymbol{\mu},\boldsymbol{\tau}$ & public quantiser constants &
+  $m_j$ & the $j$-th sub-sampling mask \\
+$\ell_i$ & label of record $i$ & $\mathbb{F}$ & field for secret sharing \\
+$\lambda,\kappa$ & computational, statistical security & $S_i$ & colliding mask set for record $i$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Homomorphic encryption, and why we leave it}
+
+CKKS~\cite{CKKS17} supports approximate arithmetic on encrypted vectors of reals, packing many
+slots into one ciphertext; rotating between slots, which any inner product needs, requires Galois
+keys that dominate key material. Blind-Touch~\cite{ChoiWooKim24} applies this to fingerprint
+matching, giving strong confidentiality at the cost of a 117\,MB Galois key per client, 856\,KB
+per query ciphertext, and a database organised around a 512-users-per-ciphertext packing limit.
+
+\subsection{Siamese feature extraction}
+
+A Siamese network~\cite{ChoiWooKim24,KimOhKim20,YangEtAl20} maps two images through a shared
+convolutional trunk trained so that same-identity pairs land close. We reuse this unchanged: the
+trunk produces $\mathbf{e} \in \mathbb{R}^{16}$, trained with pairwise binary cross-entropy on
+identity-disjoint splits. The architecture is not a contribution here; what matters is only that
+the output is a low-dimensional real vector whose cosine similarity tracks identity.
+
+\subsection{Fuzzy-labelled PSI}
+\label{sec:flpsi-prelim}
+
+Fuzzy-labelled PSI~\cite{BuiCong25} lets a client holding $\xt \in \{0,1\}^{d}$ learn the label
+$\ell_i$ of any server record $\yt_i$ within a Hamming ball of the query, while the server learns
+nothing. \emph{The construction is due to Bui and Cong; we use it as a black box and restate only
+what our parameter analysis in \S\ref{sec:params} depends on.} It composes two primitives.
+
+A \textbf{masked OPRF} lets the two parties evaluate a keyed PRF on sub-sampled positions of
+their inputs, so that equality of the PRF images certifies equality on those positions without
+revealing the underlying bits. The parties agree on $T$ public masks $m_j \in \{0,1\}^{d}$ of
+weight $w$; sub-sample $j$ of a code is its restriction to the positions selected by $m_j$.
+
+A \textbf{threshold labelled PSI} then converts collisions into a label. The server splits each
+$\ell_i$ into Shamir shares~\cite{Shamir79} with reconstruction threshold $\theta$, attaches one
+share per mask, and delivers them through a polynomial encoding evaluated obliviously via vector
+ring-OLE, itself built from silent VOLE~\cite{BoyleEtAl19,RindalSchoppmann21} under LPN. A client
+whose code collides on at least $\theta$ masks recovers $\theta$ shares and reconstructs
+$\ell_i$; a client with fewer collisions learns nothing about it. Two codes at Hamming distance
+$H$ therefore collide on a given mask with probability $q(H) = \binom{d-H}{w}/\binom{d}{w}$, and
+acceptance follows a binomial tail --- the model we develop and test in \S\ref{sec:params}.
+
+Communication is linear in $N$ with no packing ceiling, and the only key material is a PRF key
+held by the server.
+
+\subsection{Binary codes from real vectors}
+
+SimHash~\cite{Charikar02} maps a vector to the signs of random hyperplane projections; for unit
+vectors at angle $\vartheta$ a random hyperplane separates them with probability $\vartheta/\pi$,
+so normalised Hamming distance estimates $\vartheta/\pi$ without bias. \textbf{Super-Bit
+LSH}~\cite{JiEtAl12} orthonormalises the projections in blocks equal to the input dimension,
+which leaves the estimator unbiased while strictly reducing its variance at the acute angles that
+separate genuine from impostor pairs; at block size one it degenerates to SimHash.
+\textbf{ITQ}~\cite{GongLazebnik11} instead learns a rotation minimising quantisation loss, and is
+data-dependent. We use Super-Bit and compare against ITQ at a matched bit budget in
+\S\ref{sec:eval}.

@@ -26,6 +26,9 @@ Every script writes to `src/data/` (git-ignored) and expects to be run from this
 | `08_tier2_fusion.py` | Operating-point re-tune and multi-finger fusion analysis. |
 | **`09_realcrypto_validate.py`** | **Real-crypto validation** — pushes actual codes through the real protocol binary and compares against the closed-form model. |
 | `10_dim_ablation.py` | EER vs code length (64 / 128 / 256). |
+| **`11_operating_point.py`** | **The operating-point frontier** — measures the real impostor Hamming distribution, computes FAR/FRR exactly over a 6,848-point (w, t, θ) sweep, finds the irreducible collision floor, and measures multi-finger fusion. Writes 3 figures. |
+| **`12_code_analysis.py`** | **What the code contains** — bit balance, inter-bit dependence, empirical q̂(H) vs the hypergeometric model, ITQ at a matched bit budget, and EER with identity-level bootstrap CIs across all three alteration levels. |
+| `13_cnn_figures.py` | Renders the stage-by-stage CNN figures used by the pipeline walkthrough. |
 | `run_flpsi_match.py` / `benchmark_timing.py` / `show_pipeline.py` | Match verification, timing, and a step-by-step pipeline walkthrough. |
 
 ## Typical run order

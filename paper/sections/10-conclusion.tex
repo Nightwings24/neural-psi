@@ -1,0 +1,24 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We composed a learned biometric feature extractor with fuzzy-labelled PSI, replacing a
+homomorphic matching layer with a public, training-free Super-Bit bridge. The engineering result
+is favourable: 16-byte server-side templates against 1.67\,KB, no 117\,MB rotation key, no
+slot-packing ceiling, and $1.88\%$ EER (95\% CI $[1.56, 2.20]$) against a $0.33\%$
+floating-point ceiling.
+
+The substantive result is a measurement. The error analysis that fixes FLPSI's parameters assumes
+impostor codes are uniform. Codes from a 16-dimensional embedding are not: they are balanced ---
+so the assumed \emph{mean} is exactly right and no first-moment check fires --- while carrying
+$3.6\times$ the assumed standard deviation. At the published operating point this makes the
+per-record false-accept rate $1{,}550\times$ larger than predicted, and no setting of the
+sub-sampling parameters repairs it, because distinct fingers collide on identical codes at a rate
+that lower-bounds every parameterisation.
+
+The mechanism generalises beyond this system. An LSH bridge is valuable precisely because it is
+faithful, and that faithfulness transmits the embedding's impostor tail into the code intact.
+Any construction that matches learned codes under a threshold predicate inherits the same
+problem, and can detect it cheaply: measure the impostor Hamming distribution rather than
+assuming it, and count the zero-distance pairs. We recommend both as standard practice, and we
+report multi-finger fusion as the only remedy we found that moves the bound --- four orders of
+magnitude, where retuning moves none.

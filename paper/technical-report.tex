@@ -1,1059 +1,3146 @@
-\documentclass[11pt]{article}
-
-% ---------- simple, plain packages ----------
+\documentclass[11pt,a4paper]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
-\usepackage{mathtools}
-\usepackage{graphicx}
-\usepackage{booktabs}
-\usepackage{array}
 \usepackage{hyperref}
-\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue}
 \usepackage{enumitem}
-\usepackage{caption}
-\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
 \usepackage{titlesec}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
 
-\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
-\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+% macros shared with the sections/ files, which this report and paper.tex both \input
+\newcommand{\xt}{\tilde{\mathbf{x}}}
+\newcommand{\yt}{\tilde{\mathbf{y}}}
+\newcommand{\Fnpsi}{\mathcal{F}_{\mathsf{NeuralPSI}}}
+\usepackage{amsthm}
+\newtheorem{theorem}{Theorem}
+\newtheorem{definition}{Definition}
+\newtheorem{lemma}{Lemma}
 
-\setlength{\parskip}{0.5\baselineskip}
-\setlength{\parindent}{0pt}
+% Color for comments/notes
+\newcommand{\todo}[1]{\textcolor{blue!70!black}{\textit{[#1]}}}
+\newcommand{\note}[1]{\textcolor{gray}{\small\textit{#1}}}
 
-\title{\textbf{Neural-PSI: A Three-Stage Pipeline for\\
-Privacy-Preserving Fingerprint Authentication}}
-\author{Ayan Siddiqui \\ QNU Labs \\ Supervisor: Dr.\ Rohitkumar R.\ Upadhyay}
-\date{July 2026}
+\title{
+  \textbf{Privacy-Preserving Fingerprint Authentication}
+  \\[0.5em]
+  
+}
+\author{}
+\date{}
 
 \begin{document}
 \maketitle
 
-\begin{abstract}
-\noindent
-Neural-PSI is a privacy-preserving fingerprint authentication system built by combining
-two research papers: \emph{Blind-Touch} (Choi, Woo, Kim --- AAAI 2024), which extracts a
-compact feature vector from a fingerprint using a Siamese CNN and matches it under
-Homomorphic Encryption (HE), and \emph{Fuzzy Labelled PSI} (Bui--Cong 2025; open-source
-implementation \texttt{flash-psi}), which performs private fuzzy matching of binary codes at
-million-entry scale. This report explains the
-three computational stages of the resulting system --- the CNN feature extractor, the
-binarization bridge, and the PSI matching protocol --- with the underlying mathematics,
-worked numerical examples, and a justification for why each design choice was made.
-\end{abstract}
+% ──────────────────────────────────────────────────────────────────────────────
+\section*{Core Problem Statement}
 
-% =====================================================================
+
+Fingerprint authentication on a cloud server requires the server to \emph{compare}
+a biometric query against a database, yet biometric data is among the most
+sensitive personal information that exists. This creates a fundamental tension between
+security and scalability. Two existing solutions each solve half the problem:
+(1) Blind-Touch uses homomorphic encryption (HE) to keep templates encrypted on the
+server but suffers from large ciphertext expansion and a structural scale ceiling -
+requiring a 117\,MB Galois key, 855\,KB per 512 users, and becoming impractical beyond roughly 5,000 users;
+(2) Fuzzy-labeled PSI (FLPSI) is communication-efficient, scales linearly to millions of records without HE overhead,
+but operates only on raw binary strings under Hamming distance and has no mechanism to incorporate the
+deep-learning feature extractors that drive modern biometric perceptual accuracy.
+
+The open problem this paper solves is getting \emph{both} CNN-level perceptual accuracy and FLPSI-level
+communication efficiency and scalability in a single privacy-preserving system.
+
+% ──────────────────────────────────────────────────────────────────────────────
 \section{Introduction}
-% =====================================================================
 
-\subsection{Problem Statement}
+Biometric authentication offers strong usability and security guarantees for cloud and web services, but centralized storage of biometric templates creates extreme privacy risks. Unlike passwords, compromised fingerprints cannot be revoked or replaced. The canonical real-world risk materialized in the 2015 United States Office of Personnel Management (OPM) data breach, where 5.6 million fingerprint records were stolen. Privacy-preserving protocols are thus essential to allow authentication without ever exposing the raw or plaintext biometric data to the server.
 
-Fingerprint authentication on a cloud server requires comparing a user's fingerprint
-against a database without exposing the raw biometric data to the server. Blind-Touch
-solves this using Homomorphic Encryption: the server computes a match score on encrypted
-data without ever decrypting it. This works well up to roughly five thousand enrolled
-users, but has three practical limitations:
+Existing solutions to this problem remain insufficient. \textbf{Homomorphic Encryption (HE)-based} methods, such as Blind-Touch, successfully obscure the data from the server and achieve high accuracy. However, they suffer from expensive ciphertext expansion, large rotation keys, and a structural scaling bottleneck due to ciphertext slot-packing limits. \textbf{PSI-based} methods (Uzun et al., Bui--Cong) offer cheap communication and massive scalability but assume inputs are already raw bit-strings; they lack a robust biometric feature extractor to handle the natural analog variations (rotation, translation, noise) of real fingerprint captures.
 
+Our key insight is that Blind-Touch's accuracy comes entirely from its convolutional neural network (CNN) feature extractor, \emph{not} from its HE matching layer. Once the CNN produces a compact floating-point embedding, the matching problem effectively reduces to an approximate nearest-neighbour search in Hamming space - exactly the primitive that Fuzzy-Labeled Private Set Intersection (FLPSI) solves at massive scale. Decoupling the perceptual feature extraction (run locally in plaintext on the client) from the privacy-preserving matching (run between client and server via PSI) is this paper's central contribution.
+
+Specifically, we make the following contributions:
 \begin{itemize}[noitemsep]
-  \item \textbf{Scale ceiling.} The CKKS encryption scheme packs feature vectors into
-        fixed-size ciphertext ``slots''. With 8{,}192 slots and 16 values per user, only
-        512 users fit per ciphertext, and the protocol becomes impractical much beyond
-        five thousand users.
-  \item \textbf{Large keys.} The rotation key (Galois key) needed to align vectors inside
-        a ciphertext is 117\,MB and must be stored on every server.
-  \item \textbf{No label support.} Blind-Touch returns only a match probability, never an
-        identifier of \emph{which} record matched.
+  \item \textbf{(C1)} A novel system design combining Siamese CNN feature extraction with scalable FLPSI matching, eliminating the homomorphic encryption layer entirely.
+  \item \textbf{(C2)} A binary quantization bridge (Super-Bit) that successfully maps the CNN's floating-point embeddings into the fixed-length Hamming space required by PSI, without sacrificing perceptual accuracy.
+  \item \textbf{(C3)} A formal semi-honest security proof for the composite system.
+  \item \textbf{(C4)} A full prototype implementation and evaluation, with measurements to $N=5\times10^4$ and an analytic cost model beyond it.
 \end{itemize}
 
-The Fuzzy Labelled PSI protocol (flash-psi) solves all three problems --- it scales to a
-million entries, needs no large keys, and reveals a label on a match --- but it requires
-its inputs to be \textbf{binary} vectors compared by \textbf{Hamming distance}. A CNN,
-however, naturally outputs \textbf{floating-point} vectors compared by \textbf{Euclidean
-or cosine distance}. Neural-PSI bridges this gap.
-
-\subsection{The Three-Stage Pipeline}
-
-The complete system has three computational stages, executed in sequence:
-
-\begin{equation}
-\text{fingerprint image} \;\xrightarrow{\;\text{Stage 1: CNN}\;}\;
-e \in \mathbb{R}^{16} \;\xrightarrow{\;\text{Stage 2: Binarize}\;}\;
-b \in \{0,1\}^{128} \;\xrightarrow{\;\text{Stage 3: PSI}\;}\;
-\text{label or } \bot
-\end{equation}
-
-\textbf{Stage 1} (Section~3) is a convolutional neural network that converts a $96\times96$
-fingerprint image into a 16-dimensional floating-point embedding. \textbf{Stage 2}
-(Section~4, in a later part of this report) converts the 16 floats into a 128-bit binary
-code using a Super-Bit projection. \textbf{Stage 3} (Section~5) runs the flash-psi protocol
-on the binary code to privately find a match in an enrolled database and reveal the
-matching patient's label.
-
-\subsection{Summary of Results}
-
-Table~\ref{tab:summary} previews the accuracy achieved at each representation. Equal Error
-Rate (EER) is the operating point at which the false-accept rate equals the false-reject
-rate; lower is better. All numbers are measured on held-out SOCOFing identities never seen
-during training (1{,}200 genuine pairs, 240{,}000 impostor pairs). These probes are SOCOFing
-\emph{Altered-Easy} captures (synthetic obliteration / rotation / z-cut) --- an intentionally
-easy, single-dataset protocol; cross-sensor and cross-session generalisation (e.g.\ the PolyU
-contactless-to-contact dataset) is expected to be harder and remains future work.
-
-\begin{table}[h]
-\centering
-\begin{tabular}{lccc}
-\toprule
-Representation & Bits & EER & Used by \\
-\midrule
-Floating-point embedding & --- & 0.33\% & Homomorphic Encryption (ceiling) \\
-Naive sign binarization  & 16  & 10.12\% & rejected \\
-ITQ binarization         & 16  & 5.55\%  & rejected \\
-\textbf{Super-Bit binarization} & \textbf{128} & \textbf{1.88\%} & \textbf{Neural-PSI (chosen)} \\
-\bottomrule
-\end{tabular}
-\caption{Accuracy at each stage of representation, on the $224\times224$, 150-epoch model.}
-\label{tab:summary}
-\end{table}
-
-The remainder of this report explains \emph{why} each stage is built the way it is, with
-the mathematics and a concrete worked example at every step.
-
-% =====================================================================
-\section{Stage 0: Raw Fingerprint Input}
-% =====================================================================
-
-\subsection{Dataset: SOCOFing}
-
-The system is trained and evaluated on the \textbf{SOCOFing} (Sokoto Coventry Fingerprint)
-dataset (Shehu et al., 2018), a public, real fingerprint dataset:
-
-\begin{itemize}[noitemsep]
-  \item \textbf{6{,}000} fingerprint images from \textbf{600} subjects, 10 fingers per
-        subject.
-  \item Two capture types per finger: a \emph{Real} capture (a clean scan, used for
-        enrollment) and several \emph{Altered} captures (with synthetic obliteration,
-        central rotation, or z-cut distortion, used as the probe at authentication time).
-  \item \textbf{Split:} 4{,}800 identities for training the CNN; 1{,}200 identities held
-        out entirely and used only to measure accuracy (no leakage between train and
-        test).
-  \item \textbf{Image format:} $96\times96$ pixels for the lightweight model discussed
-        with worked examples in this section, and $224\times224$ for the full production
-        model whose accuracy numbers are reported throughout. Grayscale, 8-bit
-        (0~=~black ridge, 255~=~white background/valley).
-\end{itemize}
-
-\subsection{What the Raw Image Looks Like}
-
-Figure~\ref{fig:raw} shows an actual SOCOFing print used by the pipeline. A fingerprint
-image is simply a grid of brightness values: dark pixels trace the ridges, bright pixels
-are the valleys and background. The only preprocessing applied before the image enters the
-CNN is a linear rescale of pixel intensity into the unit interval,
-
-\begin{equation}
-x_{\text{norm}} = \frac{x_{\text{pixel}}}{255}, \qquad x_{\text{norm}} \in [0,1].
-\end{equation}
-
-No alignment, segmentation, or ridge-enhancement filtering is performed --- the network is
-trained to be robust to raw, unprocessed scans.
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.32\textwidth]{figures/00_fingerprint.png}
-\caption{A raw SOCOFing fingerprint image (identity \texttt{100\_left\_index}), $96\times96$
-grayscale pixels, before any processing. This is the input to Stage~1.}
-\label{fig:raw}
-\end{figure}
-
-\subsection{Data Augmentation During Training}
-
-Two scans of the same finger are never pixel-identical: pressure, moisture, and rotation
-vary between captures. To teach the network to be invariant to this, every genuine training
-pair is constructed by applying two \emph{independent} random transformations to the same
-Real-print image:
-
-\begin{itemize}[noitemsep]
-  \item \textbf{Rotation:} angle $\theta \sim \mathcal{U}(-15^{\circ}, +15^{\circ})$.
-  \item \textbf{Translation:} shift of up to $6\%$ of the image width in each direction
-        ($\approx\!\pm6$\,px at $96\times96$, $\approx\!\pm13$\,px at $224\times224$).
-  \item \textbf{Additive Gaussian noise:} $x' = \mathrm{clip}(x + \mathcal{N}(0,\sigma^2),\,0,\,255)$
-        with $\sigma = 6$.
-\end{itemize}
-
-Impostor training pairs are simply two augmented views of \emph{different} identities.
-This augmentation is what allows the network, at test time, to correctly recognise a
-fingerprint against an enrollment image captured under different conditions --- exactly
-the situation in Figure~\ref{fig:raw}, where the probe image is a different capture from
-the one stored in the database.
-
-% =====================================================================
-\section{Stage 1: Convolutional Neural Network --- Feature Extraction}
-% =====================================================================
-
-\subsection{Why a CNN, and not Traditional Minutiae Matching}
-
-Classical fingerprint matching extracts \emph{minutiae} --- ridge endings and bifurcations
---- using hand-engineered image-processing algorithms (orientation fields, Gabor filtering,
-thinning). This approach is brittle: it requires high image quality, is sensitive to noise,
-and produces a variable-length set of minutiae points that is expensive to compare across
-a large database.
-
-A CNN trained end-to-end instead \emph{learns} which spatial patterns are discriminative
-for identity, directly from pixel data, and condenses every fingerprint --- regardless of
-quality --- into a single \textbf{fixed-length} vector. This fixed length is essential for
-the rest of the pipeline: it is what makes both Homomorphic Encryption (Blind-Touch) and
-binarization-then-PSI (Neural-PSI) possible, since both require a vector of constant,
-known size.
-
-\subsection{Architecture}
-
-The feature extractor is a five-block convolutional network followed by one fully
-connected layer (``FC-16''), summarised in Table~\ref{tab:arch} and illustrated stage by
-stage in Figures~\ref{fig:block1}--\ref{fig:featvec}.
-
-\begin{table}[h]
-\centering
-\begin{tabular}{llll}
-\toprule
-Stage & Operation & Output shape & Receptive content \\
-\midrule
-Input    & ---                                & $1\times224\times224$   & raw pixels \\
-Block 1  & Conv$(3{\times}3,32)$+BN+SiLU+Pool$(2)$ & $32\times112\times112$  & edges, ridge boundaries \\
-Block 2  & Conv$(3{\times}3,64)$+BN+SiLU+Pool$(2)$ & $64\times56\times56$  & ridge flow \\
-Block 3  & Conv$(3{\times}3,128)$+BN+SiLU+Pool$(2)$& $128\times28\times28$ & minutiae-like patterns \\
-Block 4  & Conv$(3{\times}3,256)$+BN+SiLU+Pool$(2)$& $256\times14\times14$   & finger-region shapes \\
-Block 5  & Conv$(3{\times}3,512)$+BN+SiLU+Pool$(2)$& $512\times7\times7$   & abstract identity code \\
-Flatten  & ---                                & $25{,}088$              & concatenate \\
-FC-16    & Linear$(25088\rightarrow16)$        & $\mathbf{16}$          & \textbf{the feature vector} \\
-\bottomrule
-\end{tabular}
-\caption{Architecture of the Blind-Touch Siamese feature extractor (FeatureModel).}
-\label{tab:arch}
-\end{table}
-
-\subsubsection{The convolution operation}
-
-A $3\times 3$ convolution filter $K$ slides over the input feature map $X$ and computes,
-at every spatial position $(i,j)$ and for each output channel $c$,
-
-\begin{equation}
-Y_{c}(i,j) \;=\; \sum_{u=-1}^{1}\sum_{v=-1}^{1} K_{c}(u,v)\,X(i+u,\,j+v) \;+\; b_c ,
-\end{equation}
-
-with ``same'' padding so the output retains the input's spatial size before pooling. Each
-of the 32 filters in Block~1 produces one feature map, each responding to a different local
-pattern (an edge at a particular orientation, a ridge segment, and so on).
-
-\subsubsection{Batch Normalization}
-
-After each convolution, the output of every channel is normalised across the training
-batch:
-
-\begin{equation}
-\hat{Y}_c \;=\; \frac{Y_c - \mu_c}{\sqrt{\sigma_c^2 + \epsilon}}\,, \qquad
-Z_c \;=\; \gamma_c\,\hat{Y}_c + \beta_c ,
-\end{equation}
-
-where $\mu_c, \sigma_c^2$ are the batch mean and variance of channel $c$, and $\gamma_c,
-\beta_c$ are learned scale and shift parameters. This keeps activations in a stable range
-and is necessary for training a five-layer network reliably.
-
-\subsubsection{SiLU activation (Swish)}
-
-The non-linearity used throughout is SiLU,
-
-\begin{equation}
-\mathrm{SiLU}(x) \;=\; x \cdot \sigma(x) \;=\; \frac{x}{1+e^{-x}} .
-\end{equation}
-
-Unlike ReLU, SiLU is smooth everywhere and passes a small negative signal through, which
-improves gradient flow in a deep stack of convolutions.
-
-\subsubsection{Max pooling}
-
-$\mathrm{MaxPool}(2)$ replaces every non-overlapping $2\times2$ block with its maximum
-value, halving the spatial resolution at every block:
-$224 \to 112 \to 56 \to 28 \to 14 \to 7$. This progressively trades exact spatial location for
-robustness: the network becomes sensitive to \emph{whether} a pattern is present in a
-region, not to its exact pixel position --- which is precisely the invariance needed to
-tolerate the rotation and translation introduced by augmentation.
-
-\subsubsection{Flatten and FC-16}
-
-After Block~5 the representation is $512$ channels of $7\times7$ spatial size, i.e.\
-$512\times7\times7 = 25{,}088$ numbers. These are concatenated into one vector $x_{\text{flat}}
-\in \mathbb{R}^{25088}$ and passed through one linear layer,
-
-\begin{equation}
-e \;=\; W^{\!\top} x_{\text{flat}} + b\,, \qquad
-W \in \mathbb{R}^{25088\times16},\;\; b \in \mathbb{R}^{16},\;\; e \in \mathbb{R}^{16}.
-\end{equation}
-
-The 16 numbers in $e$ are the \textbf{feature vector} --- the compact, fixed-length code
-that represents the fingerprint's identity and is the output of Stage~1.
-
-\subsection{Training Objective: Siamese Pairwise Loss}
-
-The feature extractor alone has no notion of identity; it must be trained. Training uses a
-\textbf{Siamese} configuration: two copies of the same feature extractor (sharing identical
-weights) process two fingerprint images $x_1, x_2$, producing embeddings $e_1, e_2$. Their
-absolute difference is passed through one more linear unit and a sigmoid to predict whether
-the pair is genuine:
-
-\begin{align}
-e_1 &= f_\theta(x_1), \qquad e_2 = f_\theta(x_2) \\
-d   &= |e_1 - e_2| \in \mathbb{R}^{16} \\
-\ell &= w_1^{\!\top} d + b_1 \qquad \text{(one more Linear}(16\to1)\text{ layer)} \\
-p   &= \sigma(\ell) = \frac{1}{1+e^{-\ell}}
-\end{align}
-
-The network is trained with binary cross-entropy on labelled pairs ($y=1$ genuine, $y=0$
-impostor):
-
-\begin{equation}
-\mathcal{L} \;=\; -\frac{1}{N}\sum_{n=1}^{N}
-\Big[\, y_n \log p_n + (1-y_n)\log(1-p_n) \,\Big].
-\end{equation}
-
-Minimising $\mathcal{L}$ forces $f_\theta$ to place genuine pairs close together and
-impostor pairs far apart in the 16-dimensional embedding space --- without ever explicitly
-labelling \emph{which} 16 numbers correspond to which physical feature of the fingerprint.
-After training, only $f_\theta$ (the feature extractor) is kept; the comparison head
-$(w_1, b_1)$ is discarded, since Stage~2 and Stage~3 perform matching differently (by
-Hamming distance on a binarized code, not by this learned head).
-
-\subsection{Worked Example: From Pixels to a Real Feature Vector}
-
-Figures~\ref{fig:block1}--\ref{fig:featvec} show the actual internal activations of the
-trained network on the fingerprint of Figure~\ref{fig:raw}, visualising what each block
-``sees''.
-
-\begin{figure}[h]
-\centering
-\begin{subfigure}{0.48\textwidth}
-  \includegraphics[width=\textwidth]{figures/01_block1.png}
-  \caption{After Block~1: 32 channels, $48\times48$. Coarse edge and ridge-boundary
-  detectors --- each tile is one channel.}
-  \label{fig:block1}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-  \includegraphics[width=\textwidth]{figures/02_block2.png}
-  \caption{After Block~2: 64 channels, $24\times24$. Ridge-flow patterns starting to
-  emerge.}
-  \label{fig:block2}
-\end{subfigure}
-\caption{Feature maps after the first two convolutional blocks. Each small tile is one
-channel of the layer's output, displayed as a grayscale image (bright = strong
-activation).}
-\end{figure}
-
-\begin{figure}[h]
-\centering
-\begin{subfigure}{0.48\textwidth}
-  \includegraphics[width=\textwidth]{figures/03_block3.png}
-  \caption{After Block~3: 128 channels, $12\times12$. Minutiae-like, more abstract
-  structure.}
-  \label{fig:block3}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-  \includegraphics[width=\textwidth]{figures/04_block4.png}
-  \caption{After Block~4: 256 channels, $6\times6$. Whole finger-region patterns; spatial
-  detail mostly gone.}
-  \label{fig:block4}
-\end{subfigure}
-\caption{Feature maps after Blocks 3 and 4. Notice the image keeps shrinking (Table
-\ref{tab:arch}) while the number of channels keeps growing --- the network trades
-``where exactly'' for ``what pattern''.}
-\end{figure}
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.45\textwidth]{figures/05_block5.png}
-\caption{After Block~5: 512 channels, $3\times3$. This is the most abstract
-representation --- each $3\times3$ tile barely resembles a fingerprint anymore; it is
-a compressed identity code that will be flattened to 4{,}608 numbers and reduced to 16 by
-the FC-16 layer.}
-\label{fig:block5}
-\end{figure}
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.7\textwidth]{figures/06_feature_vector.png}
-\caption{The final 16-dimensional feature vector $e$, drawn as a colour strip --- one cell
-per number, red for positive values and blue for negative values. This 16-float vector is
-the complete output of Stage~1 and the input to Stage~2 (binarization).}
-\label{fig:featvec}
-\end{figure}
-
-For the fingerprint in Figure~\ref{fig:raw}, the network's FC-16 layer (Equation~7)
-produces the concrete numerical vector
-
-\begin{equation}
-e = \big[-7.41,\; -33.85,\; +16.92,\; -2.61,\; -4.30,\; -48.06,\; +10.76,\; +1.42,\;
-\ldots\big] \in \mathbb{R}^{16}.
-\end{equation}
-
-This vector, computed entirely on the client device in plaintext, never leaves the
-client until it is converted to a binary code in Stage~2. The server never receives the
-floating-point embedding at all.
-
-\subsection{Why This Design is Best}
-
-\begin{description}[leftmargin=1.2em, style=nextline]
-\item[Five convolutional blocks.] An ablation over network depth (Blind-Touch, Table~6 of
-the original paper) found that 5 blocks gives the best accuracy: F1
-$=93.8\%$ versus $92.4\%$ for 4 blocks and $89.3\%$ for 6 blocks. Fewer blocks under-fit the
-identity signal; more blocks over-fit on a dataset of this size and add unnecessary
-computation downstream.
-
-\item[16-dimensional output.] The FC-16 size is not arbitrary --- it is the size that makes
-the original Homomorphic Encryption scheme efficient: with 8{,}192 ciphertext slots and 16
-values per user, exactly 512 users fit per ciphertext (Blind-Touch, Section~3). Neural-PSI
-deliberately keeps this same 16-D embedding so that the same trained CNN can serve
-\emph{either} backend (HE or PSI) --- only the step after the CNN changes.
-
-\item[SiLU over ReLU.] SiLU is smooth and allows small negative activations to pass,
-improving gradient flow through five stacked convolutional blocks; Blind-Touch's ablations
-found this gives consistently better convergence than ReLU on fingerprint data.
-
-\item[CPU-trained (96$\times$96, 6 epochs) versus GPU-trained (224$\times$224, 150
-epochs).] Two versions of this model were trained. Table~\ref{tab:cnn-compare} compares
-them directly:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{lccc}
-\toprule
-Training configuration & Pair accuracy & Float EER & Hardware / time \\
-\midrule
-$96\times96$, 6 epochs   & 97.9\% & 2.50\% & CPU, $\sim$10 minutes \\
-$224\times224$, 150 epochs & --   & \textbf{0.33\%} & GPU, full training run \\
-\bottomrule
-\end{tabular}
-\caption{Effect of resolution and training length on embedding quality. The float EER is
-the accuracy ceiling that any downstream binarization (Stage~2) inherits.}
-\label{tab:cnn-compare}
-\end{table}
-
-This comparison demonstrates an important and non-obvious finding: \textbf{the embedding
-quality, not the binarization method, is the dominant bottleneck} of the whole system. Raising
-resolution and training length alone improved the float ceiling by $7.6\times$ ($2.50\% \to
-0.33\%$), which is why the full production model is trained at $224\times224$ for 150
-epochs whenever GPU resources are available, matching the original Blind-Touch
-specification.
-\end{description}
-
-% =====================================================================
-\section{Stage 2: Binarization --- Super-Bit Quantization}
-% =====================================================================
-
-\subsection{Why Binarization is Needed}
-
-Stage~1 produces a real-valued vector $e \in \mathbb{R}^{16}$, compared by Euclidean or
-cosine distance. The flash-psi matcher (Stage~3) operates only on fixed-length
-\textbf{binary} strings $b \in \{0,1\}^{d}$, compared by \textbf{Hamming distance}:
-
-\begin{equation}
-\mathrm{Hamming}(b_1, b_2) \;=\; \sum_{k=1}^{d} \mathbb{1}[\,b_{1,k} \neq b_{2,k}\,].
-\end{equation}
-
-There is no native way to feed 16 floating-point numbers into a protocol that only checks
-bit-string equality on sub-samples. Stage~2 is the converter: a function
-$Q : \mathbb{R}^{16} \to \{0,1\}^{128}$ such that two prints of the \emph{same} finger map
-to codes at \emph{small} Hamming distance, and two \emph{different} fingers map to codes at
-\emph{large} Hamming distance. Three methods were tried, in increasing order of quality.
-
-\subsection{Method 1: Naive Sign Binarization}
-
-The simplest possible map thresholds each coordinate at zero:
-
-\begin{equation}
-b_k = \mathbb{1}[\,e_k > 0\,], \qquad k = 1,\ldots,16.
-\end{equation}
-
-\textbf{Why it fails.} Two problems compound:
-
-\begin{enumerate}[noitemsep]
-\item \emph{Borderline flips.} If $e_k$ is close to zero (say $e_k = +0.02$), a small
-change from re-scanning the same finger (say $e_k' = -0.01$) flips that bit even though the
-underlying identity has not changed.
-\item \emph{Only 16 bits of capacity.} With $d=16$, there are only $2^{16}=65{,}536$
-possible codes; across thousands of identities, codes collide.
+% ──────────────────────────────────────────────────────────────────────────────
+\section{Background}
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{Notation}
+
+Throughout this paper, let $\lambda$ denote the security parameter. All cryptographic algorithms are assumed to run in probabilistic polynomial time (PPT) with respect to $\lambda$.
+
+We denote a finite field of prime order $q$ by $\mathbb{F}_{q}$, where all arithmetic operations are performed modulo $q$. For a positive integer $n$, the notation
+
+\[
+[n]=\{1,2,\ldots,n\}
+\]
+
+represents the set containing the first $n$ positive integers.
+
+Vectors are represented using bold lowercase letters, such as $\mathbf{u}$ and $\mathbf{v}$, whereas matrices are represented using bold uppercase letters, such as $\mathbf{A}$ and $\mathbf{B}$. Unless otherwise stated, all vectors are assumed to be column vectors.
+
+Binary strings of length $d$ are represented as elements of the set
+
+\[
+\{0,1\}^{d}.
+\]
+
+For two binary vectors
+
+\[
+\mathbf{x},\mathbf{y}\in\{0,1\}^{d},
+\]
+
+their Hamming distance is denoted by
+
+\[
+d_H(\mathbf{x},\mathbf{y}),
+\]
+
+which corresponds to the number of bit positions at which the two vectors differ.
+
+The notation
+
+\[
+x \xleftarrow{\$} S
+\]
+
+indicates that the value $x$ is sampled uniformly at random from the finite set $S$. Similarly,
+
+\[
+x\leftarrow\mathcal{A}
+\]
+
+denotes that $x$ is produced by algorithm $\mathcal{A}$.
+
+Whenever a protocol fails to produce a valid output, the special symbol
+
+\[
+\perp
+\]
+
+is returned.
+
+\subsection{Homomorphic Encryption and CKKS}
+
+Homomorphic encryption (HE) permits computation directly on ciphertexts: an
+evaluator produces an encrypted result that, once decrypted, equals the result of the
+same computation on the plaintext, without ever learning the underlying values. The
+\emph{CKKS} scheme of Cheon, Kim, Kim, and Song (2017) is the variant suited to
+biometric matching because it supports approximate arithmetic on real numbers rather
+than exact integers: it packs a vector of reals into the slots of a single polynomial
+ciphertext, so one homomorphic operation acts on all packed values in SIMD fashion.
+Each homomorphic multiplication consumes one level of a finite \emph{modulus chain},
+so the multiplicative depth of an evaluable circuit is fixed in advance by the chosen
+parameters, and choosing a larger depth or more slots directly inflates ciphertext
+size and key material. Blind-Touch builds on exactly this scheme, and it is also the source of its scalability cost: a
+large Galois key and per-user ciphertext that grows linearly with the database.
+
+\subsection{Siamese Neural Networks for Fingerprint Matching}
+
+
+Blind-Touch~\cite{ChoiWooKim24} frames fingerprint authentication as a
+similarity-matching problem using a \emph{Siamese} network: two weight-sharing
+sub-networks process a pair of fingerprints, and a small head decides whether they
+belong to the same identity. We reuse this architecture. The shared feature extractor
+is five convolutional blocks of increasing width ($32\to64\to128\to256\to512$
+filters); each block applies a $3\times3$ convolution, batch normalisation, a swish
+activation, and $2\times2$ max-pooling, reducing a $224\times224$ grayscale
+fingerprint to a $7\times7\times512$ feature map that is flattened and L2-normalised.
+The matching head takes the two feature vectors, subtracts them, passes the
+difference through a $16$-unit dense layer (\emph{FC-16}), squares the activations,
+and applies a single sigmoid unit to output a match probability in $[0,1]$; above the
+acceptance threshold (we used $0.99$) the pair is declared a match. We reproduced this
+pipeline end-to-end, training to $0.9958$ validation accuracy on SOCOFing, with a
+genuine query authenticating at score $0.998441$.
+
+The FC-16 layer with its square activation is the compact, learned representation on
+which the match decision turns, and it is also the intended handoff point to our
+system: a $16$-dimensional floating-point embedding is exactly the right size to
+quantise into a short Hamming-space code and match with FLPSI instead of HE. This
+keeps Blind-Touch's perceptual accuracy while discarding the costly encrypted-matching
+layer.
+
+\subsection{Oblivious Transfer}
+
+Oblivious Transfer (OT) is one of the fundamental primitives in modern cryptography and serves as a building block for a wide range of secure two-party computation protocols. Informally, OT enables a sender to transfer one of several messages to a receiver without learning which message was requested, while simultaneously preventing the receiver from obtaining any information about the remaining messages.
+
+
+
+\begin{definition}[1-out-of-2 Oblivious Transfer]
+
+A protocol securely realizes a 1-out-of-2 Oblivious Transfer functionality if it satisfies the following properties.
+
+\begin{enumerate}
+
+\item The sender inputs two messages
+
+\[
+(m_0,m_1).
+\]
+
+\item The receiver inputs a choice bit
+
+\[
+b\in\{0,1\}.
+\]
+
+\item The receiver learns only the selected message
+
+\[
+m_b.
+\]
+
+\item The sender obtains no information regarding the receiver's selection bit $b$.
+
+\item The receiver obtains no information regarding the unselected message
+
+\[
+m_{1-b}.
+\]
+
 \end{enumerate}
 
-\textbf{Worked example.} Suppose a genuine pair gives
+\end{definition}
+The security of Oblivious Transfer relies on satisfying two complementary privacy guarantees.
 
-\begin{equation}
-e = [+0.02,\ -1.30,\ +0.80,\ -0.01,\ \ldots], \qquad
-e' = [-0.01,\ -1.25,\ +0.77,\ +0.03,\ \ldots]
-\end{equation}
+\textbf{Receiver Privacy.}
+The sender should remain computationally unable to distinguish which message has been requested by the receiver. Formally, for any probabilistic polynomial-time sender, the protocol transcript should be computationally indistinguishable regardless of whether the receiver chooses $b=0$ or $b=1$.
 
-(two scans of the \emph{same} finger). Naive sign gives $b=[1,0,1,0,\ldots]$ but
-$b'=[0,0,1,1,\ldots]$ --- two of the first four bits flipped purely from noise near zero,
-even though $e$ and $e'$ are visually almost identical. \textbf{Measured result} on the
-held-out test set: EER $=10.12\%$, with the genuine and impostor codes only weakly
-separated (mean Hamming distance $0.59/16$ for genuine pairs versus $3.79/16$ for impostor
-pairs --- far short of the maximum possible separation of $8/16$).
+\textbf{Sender Privacy.}
+The receiver should obtain no information regarding the unselected message beyond what can be inferred from the selected message. Consequently, learning $m_b$ should reveal no computationally useful information about $m_{1-b}$.
 
-\subsection{Method 2: Iterative Quantization (ITQ)}
+The ideal functionality of a 1-out-of-2 Oblivious Transfer can therefore be represented as
 
-ITQ (Gong \& Lazebnik, 2011) first learns a $16\times16$ \textbf{orthogonal rotation
-matrix} $R$ from training data, then binarizes the \emph{rotated} embedding:
+\[
+\mathcal{F}_{OT}:
+\left(
+(m_0,m_1),\,b
+\right)
+\rightarrow
+m_b,
+\]
 
-\begin{equation}
-b = \mathrm{sign}\big((e-\mu)\,R\big).
-\end{equation}
+where the sender learns nothing about $b$, and the receiver learns nothing beyond the selected message.
 
-The rotation is chosen to minimise the quantization error between the continuous projected
-points and their binary codes, over a calibration set $V \in \mathbb{R}^{N\times16}$:
+OT offers strong privacy guarantees but performing an independent public-key protocol for each transfer is computationally expensive for large-scale secure computation. Modern protocols, e.g., Private Set Intersection and Secure Multi-Party Computation, often require millions of Oblivious Transfers in a single protocol execution. Thus, doing a public-key operation for each transfer would be a huge computational overhead.
 
-\begin{equation}
-\min_{R \,:\, R^{\!\top}\!R = I} \; \big\Vert B - V R \big\Vert_F^2 , \qquad
-B = \mathrm{sign}(VR).
-\end{equation}
 
-This is solved by \textbf{alternating optimisation}: fix $R$, recompute $B=\mathrm{sign}(VR)$;
-then fix $B$, update $R$ in closed form via the singular value decomposition of $B^{\!\top}V$:
+\subsection{Correlated Oblivious Transfer}
 
-\begin{equation}
-B^{\!\top} V = U S \,V_s^{\!\top} \quad \text{(SVD)}, \qquad R \leftarrow \big(U V_s^{\!\top}\big)^{\!\top}.
-\end{equation}
+Standard Oblivious Transfer enables the sender to send two arbitrary messages. However, many secure computation protocols do not require totally independent messages. Instead, the messages transmitted are often known to satisfy a predetermined algebraic relation. This observation yields a more efficient primitive called Correlated Oblivious Transfer (COT).
 
-\textbf{Toy worked example.} Take four 2-D calibration points
-$V = \begin{psmallmatrix}1.0 & 0.2\\ 0.9 & -0.1\\ -1.1 & 0.3\\ -0.8 & -0.2\end{psmallmatrix}$,
-starting from $R_0 = I$. Then $B = \mathrm{sign}(VR_0) =
-\begin{psmallmatrix}1&1\\1&-1\\-1&1\\-1&-1\end{psmallmatrix}$, and
-$B^{\!\top}V = \begin{psmallmatrix}3.8 & 0\\ -0.2 & 0.8\end{psmallmatrix}$, whose SVD gives
-$U,V_s$ such that the updated rotation is
+In Correlated OT, the sender no longer chooses two independent messages. Instead, a global correlation value
 
-\begin{equation}
-R_1 = \begin{pmatrix} 0.999 & -0.043 \\ 0.043 & 0.999 \end{pmatrix},
-\end{equation}
+\[
+\Delta \in \mathbb{F}_q
+\]
 
-a small corrective rotation (about $2.5^{\circ}$) that already leaves the codes unchanged
-here, confirming convergence. In the real 16-D pipeline this iteration is repeated 50
-times.
+is fixed before the protocol begins. For every transfer, the sender selects a random value
 
-\textbf{Why it is better but still limited.} ITQ removes much of the borderline-flip
-problem by rotating the axes to align with the natural spread of the data, but it is still
-confined to \textbf{16 bits} of code length --- the fundamental capacity limit is
-untouched. \textbf{Measured result:} EER $=5.55\%$, an improvement over naive sign but
-still far from the $0.33\%$ float ceiling.
+\[
+x_i
+\xleftarrow{\$}
+\mathbb{F}_q,
+\]
 
-\subsection{Method 3 (Chosen): Super-Bit LSH}
+and constructs the correlated message pair
 
-Super-Bit (Ji, Li, Yan, Zhang, Tian --- NIPS 2012) solves the capacity problem directly by
-\textbf{expanding} the code to $d=128$ bits using an orthonormalised random projection,
-combined with population-level centering and per-bit balancing. Every stage is a
-\textbf{fixed, public, affine-then-sign} map --- there is no further learned non-linearity.
+\[
+(x_i,\;x_i+\Delta).
+\]
 
-\subsubsection{Step 1: Centering}
+The receiver possesses a choice bit
 
-\begin{equation}
-e_0 = e - \mu, \qquad \mu = \frac{1}{N}\sum_{n=1}^{N} e^{(n)} \ \ \text{(population mean over training embeddings)}.
-\end{equation}
+\[
+b_i\in\{0,1\},
+\]
 
-Centering ensures the projected values are not systematically biased to one side of every
-hyperplane (which would make bits unbalanced).
+and receives
 
-\subsubsection{Step 2: Orthonormalised Projection Matrix (Super-Bit construction)}
+\[
+y_i=
+\begin{cases}
+x_i, & b_i=0,\\[1ex]
+x_i+\Delta,& b_i=1.
+\end{cases}
+\]
 
-A matrix $P \in \mathbb{R}^{128\times16}$ is built in $128/16 = 8$ independent
-\textbf{blocks}. Within each block, a $16\times16$ matrix $G$ of i.i.d.\ standard normal
-entries is drawn and orthonormalised by \textbf{Gram--Schmidt} (equivalently, $QR$
-decomposition $G = QR$, keeping $Q^{\!\top}$ as the block's 16 projection rows):
+Consequently, the receiver learns only one of the two correlated messages, while the sender remains unaware of the receiver's selection.
 
-\begin{align}
-q_1 &= \frac{g_1}{\Vert g_1 \Vert}, &
-q_2 &= \frac{g_2 - (g_2^{\!\top}q_1)\,q_1}{\big\Vert g_2 - (g_2^{\!\top}q_1)\,q_1 \big\Vert}, & \ldots
-\end{align}
+Unlike standard OT, the sender does not explicitly transmit two arbitrary messages. Instead, every transfer is completely determined by the random value $x_i$ and the global correlation $\Delta$, which significantly reduces both communication and computational complexity.
 
-\textbf{Toy worked example (Gram--Schmidt by hand).} Let
-$G = \begin{psmallmatrix}2 & 1\\ 1 & 1\end{psmallmatrix}$, columns $g_1=(2,1)^{\!\top}$,
-$g_2=(1,1)^{\!\top}$. Then
+\subsection{Vector Oblivious Linear Evaluation}
 
-\begin{equation}
-q_1 = \frac{(2,1)}{\sqrt{5}} = (0.8944,\ 0.4472), \qquad
-g_2 - (g_2^{\!\top}q_1)q_1 = (1,1) - 1.3416\,(0.8944,0.4472) = (-0.2,\ 0.4)
-\end{equation}
-\begin{equation}
-q_2 = \frac{(-0.2,0.4)}{\Vert(-0.2,0.4)\Vert} = (-0.4472,\ 0.8944).
-\end{equation}
+While Correlated Oblivious Transfer generates pairs of correlated field elements, many secure computation protocols require correlations over vectors rather than individual values. Vector Oblivious Linear Evaluation (VOLE) extends the idea of Correlated OT by producing correlated vectors that satisfy a linear relation over a finite field. These correlations form the basis of several modern cryptographic protocols, including Oblivious Pseudorandom Functions (OPRFs), Private Set Intersection (PSI), and secure multiparty computation.
 
-One can check $q_1^{\!\top}q_2 = -0.8944(0.4472)+0.4472(0.8944) = 0$ and $\Vert q_1\Vert =
-\Vert q_2\Vert = 1$: the two rows are orthonormal. In the real system, 8 such blocks are
-generated independently and stacked to form the full $128\times16$ matrix $P$.
+Let
 
-\subsubsection{Step 3: Projection}
+\[
+\Delta \in \mathbb{F}_q
+\]
 
-\begin{equation}
-z = P\,e_0 \;\in\; \mathbb{R}^{128}.
-\end{equation}
+be a secret global correlation value known only to the sender, where $\mathbb{F}_q$ denotes a finite field of prime order $q$. Consider a vector of length $n$.
 
-\textbf{Continuing the toy example.} With projection rows $q_1=(0.8944,0.4472)$ and
-$q_2=(-0.4472,0.8944)$ and a toy embedding $e=(3,-1)$, $\mu=(1,0.5)$, so $e_0 = (2,-1.5)$:
+The receiver samples two random vectors
 
-\begin{equation}
-z_1 = q_1^{\!\top}e_0 = 0.8944(2) + 0.4472(-1.5) = 1.118, \qquad
-z_2 = q_2^{\!\top}e_0 = -0.4472(2) + 0.8944(-1.5) = -2.236.
-\end{equation}
+\[
+\mathbf{u}
+=
+(u_1,u_2,\ldots,u_n)
+\in
+\mathbb{F}_q^n,
+\]
 
-\subsubsection{The Locality-Sensitive Hashing Guarantee}
+and
 
-The mathematical reason this works is the classical \textbf{random-hyperplane LSH}
-argument. For two unit vectors $u,v$ at angle $\theta = \arccos(\cos\!\mathrm{sim}(u,v))$, a
-single random hyperplane (one row of $P$) separates them with probability exactly
-$\theta/\pi$. Summing over $d$ independent (here: block-orthonormalised, hence
-lower-variance) hyperplanes gives
+\[
+\mathbf{w}
+=
+(w_1,w_2,\ldots,w_n)
+\in
+\mathbb{F}_q^n.
+\]
 
-\begin{equation}
-\boxed{\ \dfrac{\mathbb{E}\big[\mathrm{Hamming}(b_1,b_2)\big]}{d}
-\;=\; \dfrac{\theta}{\pi}
-\;=\; \dfrac{\arccos\!\big(\cos\!\mathrm{sim}(e_1,e_2)\big)}{\pi}. \ }
-\end{equation}
+Using the secret correlation value $\Delta$, the sender computes the vector
 
-Genuine pairs have small angle $\theta$ (high cosine similarity) and therefore small
-expected Hamming distance; impostor pairs have large angle and therefore large expected
-Hamming distance, approaching $d/2$ for near-orthogonal (unrelated) embeddings. This is
-exactly the separation property the flash-psi matcher needs. Super-Bit's orthonormalisation
-within each block keeps this estimator \textbf{unbiased} while \textbf{reducing its
-variance} relative to plain i.i.d.\ random projections (SimHash), for zero extra
-computational cost.
+\[
+\mathbf{v}
+=
+(v_1,v_2,\ldots,v_n),
+\]
 
-\subsubsection{Step 4: Median Balancing}
+where each element satisfies
 
-Rather than thresholding at zero, each bit is thresholded at its own \textbf{population
-median} $\tau_k$, measured once over the training set:
+\[
+v_i
+=
+u_i\Delta+w_i,
+\qquad
+1\le i\le n.
+\]
 
-\begin{equation}
-\tau_k = \mathrm{median}_n\big(z_k^{(n)}\big), \qquad
-b_k = \mathbb{1}[\,z_k > \tau_k\,].
-\end{equation}
+Equivalently, the vector relation can be expressed as
 
-This guarantees each bit is set to 1 in exactly 50\% of the training population, which is
-required for the Hamming-distance statistics that flash-psi's sub-sampling analysis relies
-on (Section~5.3).
+\[
+\mathbf{v}
+=
+\Delta\mathbf{u}
++
+\mathbf{w}.
+\]
 
-\textbf{Finishing the toy example.} With $\tau = (0, 0)$, the toy code is
-$b = (\mathbb{1}[1.118>0],\ \mathbb{1}[-2.236>0]) = (1, 0)$.
+The resulting vectors satisfy a linear correlation determined by the secret value $\Delta$.
 
-\subsection{Worked Example on the Real System}
 
-The toy example above shows the mechanism by hand at $\text{2-D}\to\text{2-bit}$; the
-production pipeline applies the identical four steps at
-$\text{16-D}\to\text{128-bit}$ (8 orthonormalised blocks instead of 1). For the actual
-fingerprint of Figure~\ref{fig:raw}, the network's 16-float output
 
-\begin{equation}
-e = [-7.41,\ -33.85,\ +16.92,\ -2.61,\ -4.30,\ -48.06,\ +10.76,\ +1.42,\ \ldots]
-\end{equation}
+From the sender's perspective, only the correlation value
 
-is centered, projected through the $128\times16$ Super-Bit matrix, and median-balanced to
-give the real 128-bit code (first 64 bits shown):
+\[
+\Delta
+\]
 
-\begin{equation}
-b = \texttt{1111010101010000111100000110001100110100001010010110111000111001\ldots}
-\end{equation}
+and the correlated vector
 
-with \textbf{67 of 128 bits set} (52\%, close to the ideal 50\%). On the held-out test set
-of the production ($224\times224$, 150-epoch) model, the measured Hamming statistics are:
+\[
+\mathbf{v}
+\]
 
-\begin{equation}
-\overline{\mathrm{Hamming}}_{\text{genuine}} \approx \frac{8}{128} \;(6.3\%), \qquad
-\overline{\mathrm{Hamming}}_{\text{impostor}} \approx \frac{64}{128} \;(50.0\%),
-\end{equation}
+are available. The sender has no knowledge of the receiver's vectors
 
-i.e.\ impostor codes are, on average, exactly at the theoretical maximum of 50\% bit
-disagreement --- the largest possible separation a balanced binary code can offer. This
-worked code is carried forward unchanged into the Stage~3 example (Section~5.4).
+\[
+\mathbf{u}
+\quad\text{or}\quad
+\mathbf{w}.
+\]
 
-\subsection{Why Super-Bit is Best}
+Conversely, the receiver knows only
+
+\[
+(\mathbf{u},\mathbf{w}),
+\]
+
+while the correlation value
+
+\[
+\Delta
+\]
+
+remains computationally hidden.
+
+Consequently, neither party can independently reconstruct the complete linear relation, while both parties collectively hold additive shares satisfying
+
+\[
+\mathbf{v}
+=
+\Delta\mathbf{u}
++
+\mathbf{w}.
+\]
+
+Unlike conventional Oblivious Transfer, which transfers independent messages, VOLE directly generates correlated randomness satisfying a linear equation over a finite field. This property allows subsequent cryptographic protocols to perform arithmetic operations using only local computations without requiring additional interaction between the participating parties.
+
+Another important advantage of VOLE is that the correlation value $\Delta$ is reused across the entire vector. As a result, a single secret value generates a large number of correlated field elements, significantly improving communication efficiency compared to executing independent oblivious transfers.
+
+
+\subsection{Silent VOLE Extension}
+
+The Vector Oblivious Linear Evaluation (VOLE) primitive introduced in the
+previous section efficiently generates correlated randomness between two
+parties. However, many modern cryptographic protocols, including
+Oblivious Pseudorandom Functions (OPRFs), Private Set Intersection (PSI),
+and Secure Multi-Party Computation (MPC), require millions of VOLE
+correlations during a single execution. Generating each correlation
+independently would require repeatedly executing expensive cryptographic
+operations, making the protocol impractical for large-scale applications.
+
+Silent VOLE Extension overcomes this limitation by expanding a relatively
+small number of \emph{base VOLE correlations} into a substantially larger
+collection of correlated vectors using only lightweight local
+computations and a small amount of communication. Consequently, the
+expensive public-key operations are performed only during the generation
+of the base correlations, while the remaining VOLE instances are produced
+through efficient symmetric-key techniques.
+
+Assume that the parties initially possess
+
+\[
+m
+\]
+
+base VOLE correlations,
+
+\[
+\{(\Delta,u_1,v_1),(\Delta,u_2,v_2),\ldots,(\Delta,u_m,v_m)\},
+\]
+
+where
+
+\[
+v_i=\Delta u_i+w_i,
+\]
+
+and
+
+\[
+m \ll n.
+\]
+
+The objective of Silent VOLE is to derive
+
+\[
+n
+\]
+
+correlated vectors satisfying the same VOLE relation,
+
+\[
+n \gg m,
+\]
+
+without executing additional public-key cryptographic protocols.
+
+The key idea underlying Silent VOLE is to combine a
+\emph{Pseudorandom Generator (PRG)} with a
+\emph{linear error-correcting code}. Instead of independently generating
+every VOLE correlation, both parties first expand a short amount of
+shared randomness into long pseudorandom vectors using a cryptographically
+secure PRG. These expanded vectors are subsequently processed using a
+linear code based on the Learning Parity with Noise (LPN) assumption. The
+linear encoding preserves the algebraic structure of the original VOLE
+correlations, allowing the parties to obtain a significantly larger
+collection of valid correlated vectors while performing only inexpensive
+linear algebra operations.
+
+Conceptually, the expansion process can be viewed as
+
+\[
+\text{Base VOLE}
+\rightarrow
+\text{PRG Expansion}
+\rightarrow
+\text{Linear Encoding}
+\rightarrow
+\text{Millions of VOLE Correlations}.
+\]
+
+Since the majority of the computation consists only of pseudorandom
+generation and matrix-vector operations, Silent VOLE achieves
+substantially lower communication and computational complexity than
+executing independent VOLE instances.
+
+The protocol naturally separates into two phases.
+
+\paragraph{Offline Phase}
+
+The offline phase is executed before the protocol inputs are known. During
+this phase, the parties generate a small number of base VOLE
+correlations together with the random seeds required by the
+pseudorandom generator. These seeds are locally expanded into long
+pseudorandom vectors, which are then processed using the linear encoding
+procedure to generate a large collection of correlated randomness. Since
+this phase is independent of the participants' private inputs, it may be
+performed during system initialization or whenever computational
+resources are available.
+
+The output of the offline phase is a large collection of correlated
+vectors satisfying the VOLE functionality
+
+\[
+v=\Delta u+w,
+\]
+
+while revealing neither the receiver's vectors nor the sender's secret
+correlation value.
+
+\paragraph{Online Phase}
+
+When the actual protocol inputs become available, the parties reuse the
+previously generated correlations instead of executing additional VOLE
+protocols. Only lightweight local computations together with a small
+amount of communication are required to adapt the preprocessed
+correlations to the protocol execution. Consequently, the online phase
+incurs very low latency compared with the expensive preprocessing stage.
+
+The security of Silent VOLE follows from the security of the underlying
+base VOLE protocol, the pseudorandomness of the employed PRG, and the
+hardness of the Learning Parity with Noise (LPN) problem underlying the
+linear encoding scheme. An adversary capable of distinguishing the
+generated correlations from uniformly random correlations would therefore
+break one of these underlying cryptographic assumptions.
+
+Silent VOLE is particularly well suited for protocols requiring a large
+amount of correlated randomness during preprocessing. In Bui and Cong's~\cite{BuiCong25}
+authentication framework, these expanded VOLE correlations are later
+utilized by the Vector Ring Oblivious Linear Evaluation protocol, which
+converts the vector correlations into secure polynomial correlations
+required by the Threshold Labelled Private Set Intersection protocol.
+
+\subsection{Polynomial Interpolation}
+
+Several cryptographic protocols employed throughout this work represent
+polynomials by evaluating them at a collection of distinct points rather
+than directly manipulating their coefficients. Recovering the original
+polynomial from these evaluation values is achieved through
+\textit{polynomial interpolation}.
+
+Suppose a polynomial
+
+\[
+f(x)
+\]
+
+has degree at most $d$. A fundamental result from algebra states that
+such a polynomial is uniquely determined by its values at any
+$d+1$ distinct points. Therefore, if the evaluations
+
+\[
+(x_1,y_1), (x_2,y_2), \ldots, (x_{d+1},y_{d+1}),
+\]
+
+are known, where
+
+\[
+y_i=f(x_i),
+\]
+
+the original polynomial can be reconstructed uniquely.
+
+One of the most commonly used interpolation techniques is the
+\textit{Lagrange interpolation formula}, which reconstructs the polynomial as
+
+\[
+f(x)=\sum_{i=1}^{d+1} y_iL_i(x),
+\]
+
+where
+
+\[
+L_i(x)=
+\prod_{\substack{1\le j\le d+1\\j\neq i}}
+\frac{x-x_j}{x_i-x_j}
+\]
+
+denotes the $i^{\text{th}}$ Lagrange basis polynomial.
+
+In the FLPSI authentication framework of Bui and Cong~\cite{BuiCong25}, polynomial interpolation is
+used during the Vector Ring-OLE protocol to reconstruct polynomial
+products from their evaluations over a common set of field elements.
+Instead of performing coefficient-wise polynomial multiplication,
+polynomials are first evaluated at several distinct points, arithmetic is
+performed on these evaluation values, and the resulting polynomial is
+subsequently recovered using interpolation. This evaluation-interpolation
+strategy substantially improves computational efficiency and forms the
+foundation of the Vector Ring-OLE construction presented in the next
+section.
+\subsection{Vector Ring Oblivious Linear Evaluation}
+
+The Threshold Labelled Private Set Intersection (TLPSI) protocol requires repeated secure evaluations of
+polynomial products while preserving the privacy of the communicating parties. Although the Vector
+Oblivious Linear Evaluation (VOLE) primitive introduced in the previous section efficiently generates
+correlated randomness over vectors, it does not directly support the polynomial computations required for
+polynomial interpolation and Shamir secret sharing.
+
+To address this limitation, the protocol employs the \emph{Vector Ring Oblivious Linear Evaluation}
+(Vector Ring-VOLE) primitive. Instead of operating directly on coefficient vectors, Vector Ring-VOLE
+represents each participant's input as a polynomial over a finite field and performs secure polynomial
+multiplication through evaluations at a common set of interpolation points. Consequently, polynomial
+operations are transformed into element-wise operations over evaluation vectors, allowing the protocol to
+reuse the efficient Vector VOLE primitive while avoiding explicit polynomial multiplication.
+
+Unlike conventional Ring-OLE protocols defined over quotient polynomial rings, Vector Ring-VOLE
+operates directly over the polynomial ring without polynomial reduction. Furthermore, the protocol is
+specifically designed for the asymmetric setting encountered in TLPSI, where the receiver owns a single
+polynomial while the sender possesses a large collection of polynomials. This enables multiple polynomial
+products to be generated simultaneously, substantially reducing both computation and communication
+compared to executing independent Ring-OLE instances.
+
+
+
+\subsubsection{Mathematical Representation}
+
+Let
+
+\[
+R=\mathbb{F}[x]
+\]
+
+denote the polynomial ring over a finite field $\mathbb{F}$.
+
+Assume that the receiver owns a polynomial
+
+\[
+u_0(x)\in R,
+\]
+
+whose degree is at most $d$, while the sender possesses a collection of $m$ polynomials
+
+\[
+\{v_i(x)\}_{i=1}^{m},
+\]
+
+each having degree at most $2d$.
+
+For every sender polynomial, the Vector Ring-VOLE functionality samples a uniformly random polynomial
+
+\[
+u_i(x),
+\]
+
+of degree at most $d$ and produces the polynomial
+
+\[
+z_i(x)=u_0(x)\,u_i(x)+v_i(x),
+\qquad
+i=1,\ldots,m.
+\]
+
+Since
+
+\[
+\deg(u_0)\le d
+\quad\text{and}\quad
+\deg(u_i)\le d,
+\]
+
+their product satisfies
+
+\[
+\deg\!\left(u_0(x)u_i(x)\right)\le2d.
+\]
+
+Therefore,
+
+\[
+\deg(z_i)\le2d,
+\]
+
+and every resulting polynomial is uniquely determined by its evaluations at any collection of
+$2d+1$ distinct field elements.
+
+Throughout the protocol, let
+
+\[
+X=\{x_1,x_2,\ldots,x_{2d+1}\}\subset\mathbb{F}
+\]
+
+denote a publicly known set of pairwise distinct interpolation points.
+
+For any polynomial
+
+\[
+p(x)\in R,
+\]
+
+its evaluation vector over the interpolation set is denoted by
+
+\[
+p(X)=
+\left(
+p(x_1),
+p(x_2),
+\ldots,
+p(x_{2d+1})
+\right).
+\]
+
+For simplicity, the evaluation vectors of
+
+\[
+u_i(x),\;
+v_i(x),\;
+z_i(x)
+\]
+
+will be denoted respectively by
+
+\[
+U_i,\;
+V_i,\;
+Z_i.
+\]
+
+This distinction between lowercase polynomial notation and uppercase evaluation-vector notation is
+maintained throughout the remainder of this chapter.
+
+
+\subsubsection{Ideal Functionality}
+
+The Vector Ring-VOLE functionality is executed between a sender and a receiver.
+
+\begin{itemize}
+    \item The receiver provides a polynomial
+    \[
+    u_0(x)\in R
+    \]
+    of degree at most $d$.
+
+    \item The sender provides a collection of polynomials
+    \[
+    \{v_i(x)\}_{i=1}^{m},
+    \]
+    each having degree at most $2d$.
+\end{itemize}
+
+The functionality independently samples uniformly random degree-$d$ polynomials
+
+\[
+u_1(x),
+u_2(x),
+\ldots,
+u_m(x),
+\]
+
+and computes
+
+\[
+z_i(x)
+=
+u_0(x)\,u_i(x)+v_i(x),
+\qquad
+i=1,\ldots,m.
+\]
+
+Finally,
+
+\begin{itemize}
+
+\item the sender receives
+
+\[
+\{u_i(x)\}_{i=1}^{m},
+\]
+
+\item the receiver receives
+
+\[
+\{z_i(x)\}_{i=1}^{m}.
+\]
+
+\end{itemize}
+
+Neither participant obtains any additional information regarding the other participant's private
+polynomials beyond what is implied by the ideal functionality.
+
+Unlike conventional Ring-OLE protocols, the same receiver polynomial
+
+\[
+u_0(x)
+\]
+
+is reused across all protocol instances. This property makes the generated correlations particularly
+well suited for batch polynomial evaluation in the Threshold Labelled Private Set Intersection protocol.
+
+
+\subsubsection{Evaluation Perspective}
+
+Direct multiplication of polynomial coefficient vectors is computationally expensive and unsuitable for
+efficient batch execution. Vector Ring-VOLE therefore performs polynomial multiplication using the
+evaluation-interpolation principle.
+
+Every polynomial is first evaluated over the common interpolation set
+
+\[
+X=\{x_1,x_2,\ldots,x_{2d+1}\}.
+\]
+
+For each interpolation point
+
+\[
+x_j\in X,
+\]
+
+the protocol computes
+
+\[
+z_i(x_j)
+=
+u_0(x_j)\,
+u_i(x_j)
++
+v_i(x_j).
+\]
+
+Equivalently, using evaluation-vector notation,
+
+\[
+Z_i
+=
+u_0(X)\odot U_i
++
+V_i,
+\]
+
+where
+
+\[
+\odot
+\]
+
+denotes component-wise multiplication.
+
+Since every polynomial
+
+\[
+z_i(x)
+\]
+
+has degree at most $2d$, its evaluation vector contains exactly the information required for unique
+reconstruction. Applying Lagrange interpolation yields
+
+\[
+z_i(x)
+=
+\sum_{j=1}^{2d+1}
+z_i(x_j)L_j(x),
+\]
+
+where
+
+\[
+L_j(x)
+=
+\prod_{\substack{1\le k\le2d+1\\k\neq j}}
+\frac{x-x_k}{x_j-x_k}
+\]
+
+is the $j$-th Lagrange basis polynomial.
+
+Consequently, secure polynomial multiplication is reduced to secure element-wise multiplication over
+evaluation vectors. This observation forms the foundation of the Vector Ring-VOLE construction and
+enables the protocol to leverage the efficient Vector VOLE primitive introduced in the previous section.
+
+
+\subsubsection{Offline (Preprocessing) Phase}
+
+The offline phase is responsible for generating random correlated data that can later be transformed into
+the Vector Ring-VOLE correlations required during the online execution. Since this preprocessing stage is
+independent of the participants' actual private inputs, it can be executed before either party provides its
+secret polynomial. Consequently, the computationally expensive cryptographic operations are moved entirely
+to the offline stage, allowing the online phase to consist primarily of lightweight finite-field operations.
+
+The preprocessing procedure is built upon the Silent VOLE Extension protocol described in the previous
+section. Starting from a small number of base VOLE correlations, the protocol efficiently expands them into
+a large collection of correlated random vectors. These vectors serve as reusable resources that are later
+adapted to the participants' actual inputs during the online phase.
+
+Let
+
+\[
+X=\{x_1,x_2,\ldots,x_{2d+1}\}
+\subset\mathbb{F}
+\]
+
+denote the common interpolation set introduced previously.
+
+Since the product of two degree-$d$ polynomials has degree at most $2d$, exactly $2d+1$ distinct
+evaluation points are sufficient for unique polynomial reconstruction through interpolation.
+
+Assume that the protocol must generate correlations for
+
+\[
+m
+\]
+
+sender polynomials.
+
+ 
+
+\paragraph{Generation of Random Polynomials}
+
+The receiver first samples a uniformly random polynomial
+
+\[
+u_0'(x)\in R,
+\]
+
+whose degree is at most $d$.
+
+Independently, the sender samples a collection of uniformly random polynomials
+
+\[
+v_1'(x),
+v_2'(x),
+\ldots,
+v_m'(x),
+\]
+
+each having degree at most $2d$.
+
+These random polynomials are completely independent of the participants' actual protocol inputs. Their
+sole purpose is to establish reusable random correlations that can later be transformed into correlations
+corresponding to the desired secret polynomials.
+
+ 
+
+\paragraph{Construction of Evaluation Vectors}
+
+Instead of manipulating polynomial coefficients directly, every randomly generated polynomial is evaluated
+over the common interpolation set.
+
+The receiver computes the evaluation vector
+
+\[
+u_0'(X)
+=
+\left(
+u_0'(x_1),
+u_0'(x_2),
+\ldots,
+u_0'(x_{2d+1})
+\right).
+\]
+
+Similarly, for every sender polynomial
+
+\[
+v_i'(x),
+\]
+
+the sender computes
+
+\[
+V_i'
+=
+v_i'(X)
+=
+\left(
+v_i'(x_1),
+v_i'(x_2),
+\ldots,
+v_i'(x_{2d+1})
+\right).
+\]
+
+Collecting all sender evaluation vectors produces the matrix
+
+\[
+V'
+=
+\begin{bmatrix}
+V_1'\\
+V_2'\\
+\vdots\\
+V_m'
+\end{bmatrix},
+\]
+
+whose dimensions are
+
+\[
+m\times(2d+1).
+\]
+
+Each row corresponds to one sender polynomial, whereas each column corresponds to one interpolation point.
+
+ 
+
+\paragraph{Generation of Random VOLE Correlations}
+
+Using the evaluation vectors constructed above, the parties execute the Silent VOLE Extension protocol.
+
+For every sender polynomial, the protocol generates a random correlated evaluation vector
+
+\[
+U_i',
+\]
+
+which may be viewed as the evaluation vector of a random degree-$d$ polynomial obtained through polynomial
+interpolation.
+
+Collecting all generated vectors yields
+
+\[
+U'
+=
+\begin{bmatrix}
+U_1'\\
+U_2'\\
+\vdots\\
+U_m'
+\end{bmatrix}.
+\]
+
+For every row, the receiver obtains a correlated evaluation vector
+
+\[
+Z_i'
+=
+u_0'(X)\odot U_i'
++
+V_i',
+\qquad
+i=1,\ldots,m,
+\]
+
+where
+
+\[
+\odot
+\]
+
+denotes component-wise multiplication.
+
+Equivalently, the complete collection of correlations can be written compactly as
+
+\[
+Z'
+=
+u_0'(X)\odot U'
++
+V'.
+\]
+
+These correlations are uniformly random because they are generated independently of the participants'
+actual secret inputs.
+
+ 
+
+\paragraph{Interpretation of the Preprocessing Data}
+
+At the conclusion of the preprocessing stage,
+
+\begin{itemize}
+
+\item the receiver possesses
+
+\[
+u_0'(x),
+\qquad
+Z',
+\]
+
+\item the sender possesses
+
+\[
+U',
+\qquad
+V'.
+\]
+
+\end{itemize}
+
+Although these values satisfy valid Vector VOLE correlations, they correspond only to randomly generated
+polynomials rather than the participants' actual private inputs. Consequently, they cannot yet be used for
+the Threshold Labelled Private Set Intersection protocol.
+
+Instead, the preprocessing data acts as reusable correlated randomness. During the online phase, a small
+correction procedure transforms these random correlations into Vector Ring-VOLE correlations corresponding
+to the receiver's secret polynomial and the sender's actual polynomial collection. Since the expensive Silent
+VOLE Extension has already been completed offline, this transformation requires only lightweight finite-field
+operations together with a small amount of communication.
+ 
+
+\subsubsection{Online Phase}
+
+After completing the offline preprocessing stage, both parties possess a collection of random correlated
+evaluation vectors that are independent of their actual protocol inputs. Consequently, these correlations
+cannot yet be used for the Threshold Labelled Private Set Intersection protocol.
+
+The objective of the online phase is to transform the random preprocessing correlations into valid
+Vector Ring-VOLE correlations corresponding to the participants' secret input polynomials. This
+transformation is commonly referred to as \emph{correlation adjustment} (or \emph{de-randomization})
+and requires only a small amount of communication together with inexpensive finite-field operations.
+Importantly, no additional execution of the Silent VOLE Extension protocol is required.
+
+Assume that the receiver's secret polynomial is
+
+\[
+u_0(x),
+\]
+
+while the sender holds the collection of secret polynomials
+
+\[
+\{v_i(x)\}_{i=1}^{m}.
+\]
+
+The preprocessing stage has already generated the random evaluation vectors satisfying
+
+\[
+Z'
+=
+u_0'(X)\odot U'
++
+V',
+\]
+
+where
+
+\[
+u_0'(X)
+=
+\left(
+u_0'(x_1),
+u_0'(x_2),
+\ldots,
+u_0'(x_{2d+1})
+\right)
+\]
+
+denotes the evaluation vector of the randomly generated receiver polynomial.
+
+The goal of the online phase is to obtain correlations corresponding to
+
+\[
+u_0(x)
+\]
+
+without repeating the expensive preprocessing computation.
+
+ 
+
+\paragraph{Correlation Adjustment}
+
+The receiver first computes the correction polynomial
+
+\[
+\Delta u(x)
+=
+u_0(x)-u_0'(x).
+\]
+
+Since both polynomials have degree at most $d$, the correction polynomial also has degree at most $d$.
+
+Rather than transmitting the coefficients of the correction polynomial, the receiver evaluates it over the
+common interpolation points
+
+\[
+X
+=
+\{x_1,x_2,\ldots,x_{2d+1}\},
+\]
+
+obtaining the correction vector
+
+\[
+\Delta U
+=
+\Delta u(X)
+=
+\left(
+\Delta u(x_1),
+\Delta u(x_2),
+\ldots,
+\Delta u(x_{2d+1})
+\right).
+\]
+
+Only this evaluation vector is transmitted to the sender. Consequently, the receiver never reveals the
+coefficients of its secret polynomial.
+
+Using the received correction vector together with the preprocessing data, the sender adjusts the stored
+correlations so that they now correspond to the receiver's actual polynomial rather than the randomly
+generated preprocessing polynomial. This adjustment consists only of finite-field additions over the stored
+evaluation vectors and therefore incurs negligible computational overhead compared to the offline Silent
+VOLE Extension protocol.
+
+After the adjustment, the resulting evaluation vectors satisfy the Vector Ring-VOLE relation
+
+\[
+Z
+=
+u_0(X)\odot U
++
+V,
+\]
+
+where
+
+\[
+U
+=
+\{U_i\}_{i=1}^{m},
+\qquad
+V
+=
+\{V_i\}_{i=1}^{m},
+\]
+
+represent the sender's evaluation vectors corresponding to the final protocol execution.
+
+Thus, the random preprocessing correlations are converted into correlations corresponding to the
+participants' actual secret inputs without performing another VOLE protocol.
+
+ 
+
+\paragraph{Polynomial Reconstruction}
+
+Each evaluation vector
+
+\[
+Z_i
+=
+\left(
+z_i(x_1),
+z_i(x_2),
+\ldots,
+z_i(x_{2d+1})
+\right)
+\]
+
+contains the evaluations of a polynomial whose degree is at most $2d$.
+
+Therefore, the receiver reconstructs the polynomial
+
+\[
+z_i(x)
+\]
+
+using Lagrange interpolation,
+
+\[
+z_i(x)
+=
+\sum_{j=1}^{2d+1}
+z_i(x_j)L_j(x),
+\]
+
+where
+
+\[
+L_j(x)
+=
+\prod_{\substack{1\le k\le2d+1\\k\neq j}}
+\frac{x-x_k}{x_j-x_k}
+\]
+
+is the $j$-th Lagrange basis polynomial.
+
+The reconstructed polynomial satisfies
+
+\[
+z_i(x)
+=
+u_0(x)u_i(x)
++
+v_i(x),
+\]
+
+which is precisely the polynomial required by the ideal Vector Ring-VOLE functionality.
+
+ 
+
+\subsubsection{Correctness}
+
+The correctness of the Vector Ring-VOLE protocol follows directly from the preprocessing stage together
+with the online correlation adjustment.
+
+During preprocessing, the parties generate random evaluation vectors satisfying
+
+\[
+Z'
+=
+u_0'(X)\odot U'
++
+V'.
+\]
+
+These vectors are independent of the participants' actual inputs and therefore can be generated entirely
+offline.
+
+During the online phase, the receiver computes the correction polynomial
+
+\[
+\Delta u(x)
+=
+u_0(x)-u_0'(x),
+\]
+
+and communicates only its evaluations over the common interpolation points. The sender subsequently
+adjusts the stored preprocessing correlations so that the resulting evaluation vectors satisfy
+
+\[
+Z
+=
+u_0(X)\odot U
++
+V.
+\]
+
+For every interpolation point
+
+\[
+x_j\in X,
+\]
+
+the corresponding coordinate satisfies
+
+\[
+z_i(x_j)
+=
+u_0(x_j)\,
+u_i(x_j)
++
+v_i(x_j).
+\]
+
+Since
+
+\[
+\deg(z_i)\le2d,
+\]
+
+the polynomial is uniquely determined by its evaluations at the
+$2d+1$ interpolation points.
+
+Applying Lagrange interpolation therefore reconstructs the unique polynomial
+
+\[
+z_i(x)
+=
+u_0(x)u_i(x)
++
+v_i(x),
+\]
+
+which is exactly the output specified by the ideal Vector Ring-VOLE functionality.
+
+Hence, the protocol produces the same result as direct polynomial multiplication while preserving the
+privacy guarantees established by the underlying VOLE correlations.
+ 
+
+\subsection{Security Analysis}
+
+The security of the Vector Ring-VOLE protocol follows directly from the security guarantees provided by
+the underlying Silent VOLE Extension protocol together with the correctness of the correlation adjustment
+performed during the online phase.
+
+Throughout the execution, the receiver never reveals its secret polynomial
+
+\[
+u_0(x).
+\]
+
+Instead, the preprocessing stage is executed using a uniformly random polynomial
+
+\[
+u_0'(x),
+\]
+
+which is statistically independent of the receiver's actual input. Consequently, the correlated randomness
+generated during preprocessing leaks no information about the receiver's secret polynomial.
+
+During the online phase, the receiver communicates only the evaluation vector of the correction polynomial
+
+\[
+\Delta u(x)=u_0(x)-u_0'(x).
+\]
+
+Since the preprocessing polynomial is chosen uniformly at random and is known only to the receiver, these
+correction values reveal no useful information about the coefficients of the receiver's actual polynomial
+beyond what is implied by the protocol output.
+
+Similarly, the sender's private polynomial collection
+
+\[
+\{v_i(x)\}_{i=1}^{m}
+\]
+
+is never disclosed to the receiver. The receiver obtains only the correlated output polynomials
+
+\[
+\{z_i(x)\}_{i=1}^{m},
+\]
+
+which are computationally indistinguishable from the outputs generated by the ideal Vector Ring-VOLE
+functionality.
+
+Assuming the security of the Silent VOLE Extension protocol in the semi-honest adversarial model, the
+constructed Vector Ring-VOLE protocol securely realizes the ideal functionality while preserving the privacy
+of both participants' inputs.
+
+% ──────────────────────────────────────────────────────────────────────────────
+\section{Problem Formulation}
+% ──────────────────────────────────────────────────────────────────────────────
+
+We model the privacy-preserving fingerprint authentication problem with three main entities: the user (client), the authentication server, and an offline key authority (for setup phases). The process is split into two phases: registration, where a user enrols their biometric template, and authentication, where a probe fingerprint is queried against the server's database.
+
+We define three precise security goals for the system:
+\begin{itemize}[noitemsep]
+    \item \textbf{(G1) Biometric Privacy:} The server learns nothing about the query fingerprint or its distance to any registered template during authentication.
+    \item \textbf{(G2) Template Privacy:} The client learns nothing about the server's registered templates beyond the identity of the single matched record (if any).
+    \item \textbf{(G3) Correctness:} Genuine fingerprint pairs authenticate successfully (subject to the false rejection rate), and imposter pairs are rejected (subject to the false acceptance rate).
+\end{itemize}
+
+Consistent with prior work, we operate in the semi-honest (honest-but-curious) threat model. Malicious adversaries, side-channel attacks, and presentation attacks (such as spoofing or liveness detection) are out of scope.
+
+Existing state-of-the-art solutions address only subsets of these goals. Blind-Touch strictly achieves G1 and G3 but relies on Homomorphic Encryption, leading to poor scalability that prevents deployment for large-scale databases. Conversely, the FLPSI construction of Bui--Cong achieves G1, G2, and G3 with massive scalability, but it assumes the inputs are already binary strings, which is not the case for raw, noisy fingerprint images. NeuralPSI explicitly targets all three goals simultaneously while maintaining practical efficiency.
+
+% ──────────────────────────────────────────────────────────────────────────────
+\section{System Design: NeuralPSI}
+\label{sec:design}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsection{Architecture Overview}
+
+The NeuralPSI architecture is strictly partitioned into two phases to enforce privacy: client-side feature extraction and server-side matching.
+
+\textbf{Client Side:} The client captures the raw fingerprint image and passes it through the Siamese CNN to extract the 16-dimensional floating-point embedding (\texttt{FC-16}). This continuous embedding is then passed through the quantisation bridge to produce a 128-bit binary string $\tilde{\mathbf{x}} \in \{0,1\}^{128}$. This entire pipeline (Image $\to$ CNN $\to$ FC-16 $\to$ quantisation) runs locally in plaintext on the user's own device.
+
+\textbf{Server Side:} The authentication server simply stores a plaintext database of registered binary templates and their associated labels, $\{(\tilde{\mathbf{y}}_i, \ell_i)\}$. 
+
+During authentication, the client and server engage in an interactive FLPSI protocol. The client provides its binary query $\tilde{\mathbf{x}}$, and the server provides its database. 
+
+The core design principle of NeuralPSI is that the computationally heavy and perceptually difficult task---the CNN---runs entirely in plaintext on the client. No raw biometric data, and no floating-point neural embeddings, ever leave the device. The server only ever sees PRF-masked sub-samples of the binary code $\tilde{\mathbf{x}}$ during the PSI protocol, ensuring strict biometric privacy.
+
+\subsection{Feature Quantisation: From CNN Embeddings to Hamming Space}
+
+NeuralPSI replaces Blind-Touch's homomorphic-encryption matching layer with FLPSI,
+and this swap creates a representation mismatch the rest of the system cannot paper
+over. The CNN feature extractor emits a $16$-dimensional floating-point embedding
+$\mathbf{e}\in\mathbb{R}^{16}$ whose natural notion of similarity is cosine
+(equivalently Euclidean, after L2-normalisation); FLPSI, by contrast, matches
+fixed-length \emph{binary} strings under \emph{Hamming} distance with a sub-sampling
+threshold. Contribution~C2 is the converter between them: a map from $\mathbf{e}$ to a
+binary code $\tilde{\mathbf{x}}\in\{0,1\}^{128}$ under which two impressions of the
+same finger land at small Hamming distance and impressions of different fingers land
+far apart, in exactly the form the PSI protocol - and the security argument of
+\S5 - can consume. A usable bridge must satisfy four constraints at once, and most
+off-the-shelf hashing schemes violate at least one:
+(i)~\emph{similarity preservation}, Hamming distance must track identity;
+(ii)~\emph{fixed binary format}, exactly $d=128$ native Hamming bits;
+(iii)~\emph{an FLPSI-friendly error profile}, because the matcher sub-samples bit
+positions the per-bit errors should be near-i.i.d.\ and the bits balanced
+($\approx 50/50$), or the protocol's FPR/FNR analysis no longer holds; and
+(iv)~\emph{a public, cheap map}, published alongside the model (like
+batch-normalisation statistics) and costing a single matrix multiply at inference.//
+
+
+Our quantiser is a fixed, public, \emph{affine-then-sign} map - with no learned
+non-linearity - in three stages applied to the embedding $\mathbf{e}$.
+\textbf{(1)~Centre:} $\mathbf{e}_0=\mathbf{e}-\boldsymbol{\mu}$, where
+$\boldsymbol{\mu}$ is the population mean on a held-out calibration split;
+L2-normalised features occupy a spherical cap rather than the full sphere, so
+thresholding at the origin would yield badly unbalanced bits, and centring restores
+balance. \textbf{(2)~Super-Bit projection:} $\mathbf{z}=\mathbf{P}\mathbf{e}_0$ with
+$\mathbf{P}\in\mathbb{R}^{128\times16}$ built as $8$ stacked $16\times16$ Gaussian
+blocks, each orthonormalised within the block by Gram--Schmidt, all generated from a
+single \emph{published seed}. \textbf{(3)~Balanced sign:}
+$\tilde{x}_k=\mathbf{1}[z_k>\tau_k]$, where $\tau_k$ is the per-bit median on the
+calibration split, forcing each output bit to $\approx 50/50$ as constraint~(iii)
+requires. At inference the three stages collapse to one matrix multiply and a
+threshold compare,
+$\tilde{\mathbf{x}}=\mathbf{1}[\mathbf{P}(\mathbf{e}-\boldsymbol{\mu})>\boldsymbol{\tau}]$,
+and the public constants $(\mathbf{P},\boldsymbol{\mu},\boldsymbol{\tau})$ and the seed
+ship beside the model.
+
+The map preserves similarity by the random-hyperplane LSH identity: for two unit
+vectors at angle $\theta$ a random hyperplane separates them with probability
+$\theta/\pi$, so for the $d$-bit code
+\[
+  \frac{\mathbb{E}\big[\mathrm{Hamming}(\tilde{\mathbf{x}}_1,\tilde{\mathbf{x}}_2)\big]}{d}
+  \;=\; \frac{\theta}{\pi}
+  \;=\; \frac{1}{\pi}\arccos\!\big(\langle\hat{\mathbf{e}}_1,\hat{\mathbf{e}}_2\rangle\big),
+\]
+mapping genuine pairs (small $\theta$) to small Hamming distance and impostor pairs
+(large $\theta$) to large Hamming distance - exactly the quantity FLPSI thresholds.
+We use the \emph{Super-Bit} construction rather than plain SimHash because
+orthonormalising the projection rows in blocks of $N=16$ (the input dimension) leaves
+the estimator above unbiased while strictly lowering its variance at the acute angles
+that separate genuine from impostor pairs, giving a tighter Hamming separation at the
+\emph{same} $128$ bits and zero extra cost; at block size $1$ it degenerates to plain
+SimHash, which it therefore strictly subsumes. A fourth, \emph{optional} stage may be
+inserted before projection - rescaling the dimensions by
+$\mathrm{diag}(\sqrt{|\mathbf{w}_1|})$, the per-dimension weights of the head's final
+layer, so that Hamming distance tracks the learned accept metric rather than raw
+cosine - but we find it helps only an under-trained embedding and \emph{hurts} a
+well-trained one (\S7.2), and our recommended configuration omits it.//
+
+
+Calibrated on held-out identities, the code shows the wide separation the design
+needs: genuine pairs concentrate at Hamming distance $\approx 8/128$ and impostor
+pairs at $\approx 64/128$, with output bits balanced at $50.2\%$ and a Fisher
+separation
+$d'=(\mu_{\mathrm{imp}}-\mu_{\mathrm{gen}})/\sqrt{(\sigma_{\mathrm{gen}}^2+\sigma_{\mathrm{imp}}^2)/2}=3.78$;
+a plain Hamming threshold $d_k\approx 20$ sits between the
+two modes. FLPSI does not test $\mathrm{Hamming}\le d_k$ directly, however: it accepts
+when at least $t$ of $T$ random sub-samples collide, a smoother implicit threshold on
+total Hamming distance. With $H$ the Hamming distance and $w$ the number of positions
+in one sub-sampling mask, a single sub-sample collides with probability
+$q(H)=\binom{d-H}{w}\big/\binom{d}{w}$ and the pair is accepted with probability
+$\Pr[\mathrm{Binomial}(T,q(H))\ge t]$. We therefore calibrate $(w,t,T)$ rather than a
+raw $d_k$: with $T=64$ and $t$ kept small (the Shamir secret-sharing cost grows with
+$t$), a mask weight $w=14$ places the operating point in the genuine/impostor gap
+above. The full ROC sweep over $(w,t)$ and the multi-finger fusion that turn this
+single-finger code into a deployable operating point lie beyond the quantiser itself
+- they are operating-point and system-level questions, treated with the evaluation
+in \S7.//
+
+
+It is tempting to argue that publishing $\mathbf{P}$ is harmless because recovering
+$\mathbf{e}$ from $\tilde{\mathbf{x}}$ would mean inverting an underdetermined system.
+\emph{This reasoning is backwards, and we flag it explicitly.} The map applies $128$
+sign measurements to a $16$-dimensional vector - an \emph{over}-determined, roughly
+$8\times$ oversampled system - and one-bit compressed sensing recovers the
+\emph{direction} of $\mathbf{e}$ from public $\mathbf{P}$ and $\tilde{\mathbf{x}}$ up
+to an angular error that shrinks with the oversampling ratio (the magnitude is lost
+but irrelevant after L2-normalisation). The sign map is therefore \emph{not} a privacy
+mechanism and must not be relied on as one. Biometric privacy rests instead entirely
+on the FLPSI layer: the server never receives $\tilde{\mathbf{x}}$ in the clear, only
+PRF-masked sub-samples through the masked-OPRF and TLPSI sub-protocols, so it cannot
+assemble the code that the inversion would require. C2's responsibility is accuracy
+and format; secrecy is discharged by the protocol of \S4.4 and analysed in \S5.
+
+\subsection{Registration Protocol}
+
+
+The registration phase proceeds as follows:
+\begin{enumerate}
+    \item The user captures a reference fingerprint image on their device.
+    \item The client runs the CNN feature extractor to produce the floating-point embedding, followed by the quantisation bridge to produce the 128-bit binary template $\tilde{\mathbf{y}}_u$.
+    \item The client sends $\tilde{\mathbf{y}}_u$ along with a unique identifier $\ell_u$ to the authentication server over a secure channel (e.g., TLS).
+    \item The server stores the pair $(\tilde{\mathbf{y}}_u, \ell_u)$ in plaintext in its database.
+\end{enumerate}
+
+Because the 128-bit binary template is essentially a randomized projection of the embedding, the raw fingerprint image and the dense floating-point vector never leave the user's device. Compared to Blind-Touch, which must store heavy CKKS ciphertexts ($\approx855$\,KB packed per 512 users), our approach stores just 16 bytes per user in plaintext, reducing storage overhead by orders of magnitude.
+
+\subsection{Authentication Protocol}
+The authentication framework proposed in this work relies on the Fuzzy Labelled Private Set Intersection (FLPSI) protocol to perform privacy-preserving approximate matching between biometric templates. Unlike conventional Private Set Intersection protocols that require exact equality between two inputs, FLPSI allows two binary feature vectors to be considered identical even when they differ in a limited number of bit positions. This property makes FLPSI particularly suitable for biometric authentication, where two measurements of the same fingerprint rarely produce identical binary representations due to sensing noise, finger placement, and environmental variations.
+
+Rather than directly comparing the complete feature vectors, FLPSI transforms the approximate matching problem into a Threshold Labelled Private Set Intersection (TLPSI) problem. The transformation enables approximate matching to be securely evaluated using efficient cryptographic primitives while revealing only the associated label of a matching database entry. This section presents the complete FLPSI construction, beginning with the fuzzy matching problem, followed by the TLPSI formulation, and finally the cryptographic protocol used to securely realize the functionality.
+
+\subsubsection{Fuzzy Matching Problem}
+
+Consider two parties, namely a client
+$\mathcal{C}$
+and a server
+$\mathcal{S}$.
+
+The client possesses a binary feature vector
+
+\[
+\mathbf{x}
+\in
+\{0,1\}^{d},
+\]
+
+where $d$ denotes the feature dimension.
+
+The server maintains a database
+
+\[
+\mathcal D=
+\{
+(\mathbf{y}_1,\ell_1),
+(\mathbf{y}_2,\ell_2),
+\ldots,
+(\mathbf{y}_N,\ell_N)
+\},
+\]
+
+where
+
+\[
+\mathbf{y}_i
+\in
+\{0,1\}^{d}
+\]
+
+represents the enrolled binary template of the $i^{th}$ user and
+
+\[
+\ell_i
+\]
+
+denotes the corresponding label.
+
+The objective of the authentication protocol is to determine whether there exists a template satisfying
+
+\[
+d_H(\mathbf{x},\mathbf{y}_i)
+\le
+d_k,
+\]
+
+where
+
+\[
+d_H(\cdot,\cdot)
+\]
+
+denotes the Hamming distance and
+
+\[
+d_k
+\]
+
+is the maximum acceptable distance.
+
+If such a template exists, the protocol returns
+
+\[
+\ell_i.
+\]
+
+Otherwise,
+
+\[
+\perp
+\]
+
+is returned.
+
+Traditional Private Set Intersection protocols assume that two inputs are considered identical only when every corresponding element is equal. Formally,
+
+\[
+\mathbf{x}
+=
+\mathbf{y}_i.
+\]
+
+This assumption is generally unsuitable for biometric authentication because repeated measurements of the same fingerprint often produce slightly different feature vectors. As a result, directly applying exact PSI would reject many genuine authentication attempts.
+
+Instead, the authentication problem must tolerate a limited number of bit differences while still preserving the privacy of both participants. FLPSI achieves this objective by reducing the fuzzy matching problem to a Threshold Labelled Private Set Intersection problem.
+
+\subsubsection{Shamir Threshold Secret Sharing}
+
+Threshold Labelled Private Set Intersection (TLPSI) relies on
+Shamir's Threshold Secret Sharing scheme to protect the server's
+label while ensuring that it can only be recovered when a sufficient
+number of matching elements exist between the client and the server.
+This subsection briefly introduces the underlying secret sharing
+mechanism.
+
+Suppose a dealer wishes to distribute a secret
+
+\[
+s \in \mathbb{F}_q,
+\]
+
+among multiple participants such that any collection of at least
+$t$ participants can recover the secret, whereas any group
+containing fewer than $t$ participants obtains no information
+about it. This property is referred to as a
+\emph{$(t,n)$ threshold secret sharing scheme}.
+
+To construct the shares, the dealer first generates a random
+polynomial
+
+\[
+f(x)=a_0+a_1x+a_2x^2+\cdots+a_{t-1}x^{t-1},
+\]
+
+of degree $t-1$, where
+
+\[
+a_0=s,
+\]
+
+and the remaining coefficients
+
+\[
+a_1,a_2,\ldots,a_{t-1}
+\]
+
+are sampled uniformly at random from the finite field
+$\mathbb{F}_q$.
+
+Each participant is then assigned a distinct non-zero identifier
+$x_i$, and receives the corresponding share
+
+\[
+(x_i,f(x_i)).
+\]
+
+Since the polynomial has degree $t-1$, any collection of at least
+$t$ distinct shares uniquely determines the polynomial through
+polynomial interpolation. Consequently, the secret is recovered by
+evaluating the reconstructed polynomial at
+
+\[
+f(0)=s.
+\]
+
+Conversely, any collection containing fewer than $t$ shares is
+insufficient to reconstruct the polynomial because infinitely many
+degree-$(t-1)$ polynomials can pass through fewer than $t$ points.
+Therefore, no information about the secret can be inferred from
+an insufficient number of shares.
+
+In Bui and Cong's TLPSI protocol~\cite{BuiCong25}, the server embeds a protected
+version of the user's label as the constant coefficient of the
+secret-sharing polynomial. Every common element between the
+client's and the server's sets reveals one valid evaluation of this
+polynomial. Only when the number of common elements reaches the
+required threshold can the client reconstruct the polynomial and
+recover the protected label. This property enables TLPSI to reveal
+labels only for sufficiently similar biometric templates while
+preserving the privacy of all non-matching entries.
+
+\subsubsection{Threshold Labelled PSI Construction}
+
+This subsection recalls, for self-containedness, the cryptographic construction of Bui and Cong~\cite{BuiCong25} that realizes the Threshold Labelled Private Set Intersection (TLPSI) functionality introduced in the previous section. \emph{The construction, its correctness argument and its security proof are entirely theirs; we restate them here only because our parameter analysis in Section~\ref{sec:params} depends on their internals.} Their protocol combines Shamir's Threshold Secret Sharing with their Vector Ring Oblivious Linear Evaluation (Vector Ring-OLE) primitive to securely determine whether the intersection between the client and server sets satisfies the required threshold.
+
+Assume that the client holds a private set
+
+\[
+X=\{x_1,x_2,\ldots,x_d\},
+\]
+
+while the server stores
+
+\[
+Y=\{y_1,y_2,\ldots,y_d\},
+\]
+
+together with an associated label
+
+\[
+\ell.
+\]
+
+The objective of the protocol is to reveal the label only when
+
+\[
+|X\cap Y|
+\ge t,
+\]
+
+without revealing any additional information regarding either participant's private input.
+
+\paragraph{Polynomial Construction}
+
+The client first represents its input set by constructing a polynomial whose roots correspond to the elements contained in its set.
+
+For the input
+
+\[
+X=\{x_1,x_2,\ldots,x_d\},
+\]
+
+the client computes
+
+\[
+u_0(x)
+=
+\prod_{i=1}^{d}
+(x-x_i).
+\]
+
+Consequently,
+
+\[
+u_0(x_i)=0,
+\qquad
+\forall x_i\in X.
+\]
+
+The polynomial
+
+\[
+u_0(x)
+\]
+
+therefore uniquely represents the client's input set through its roots.
+
+The server independently samples a uniformly random polynomial
+
+\[
+u_1(x)
+\]
+
+of degree
+
+\[
+d.
+\]
+
+Next, the server derives a masked representation of the associated label. Let
+
+\[
+\ell'
+=
+\operatorname{PRF}_k(\ell),
+\]
+
+where
+
+\[
+k
+\]
+
+is the secret key of the pseudorandom function.
+
+Instead of embedding the label directly, the protocol first constructs a Shamir secret sharing polynomial
+
+\[
+f(x)
+\]
+
+of degree
+
+\[
+t-1
+\]
+
+such that
+
+\[
+f(0)=\ell'.
+\]
+
+The constant coefficient of
+
+\[
+f(x)
+\]
+
+therefore corresponds to the protected label, while the remaining coefficients are selected uniformly at random.
+
+The server then generates a polynomial
+
+\[
+v_1(x)
+\]
+
+of degree
+
+\[
+2d
+\]
+
+that satisfies
+
+\[
+v_1(y_i)
+=
+f(y_i),
+\qquad
+\forall
+y_i\in Y.
+\]
+
+Since the polynomial is constrained only at the points contained in the server's set, the remaining coefficients are selected randomly. Consequently,
+
+\[
+v_1(x)
+=
+f(x)
++
+\left(
+\prod_{i=1}^{d}(x-y_i)
+\right)
+R(x),
+\]
+
+where
+
+\[
+R(x)
+\]
+
+is a uniformly random polynomial of degree
+
+\[
+d.
+\]
+
+This representation guarantees that
+
+\[
+v_1(y_i)=f(y_i)
+\]
+
+for every
+
+\[
+y_i\in Y,
+\]
+
+while preserving the secrecy of both the polynomial and the embedded label.
+
+Once the client polynomial
+
+\[
+u_0(x)
+\]
+
+and the server polynomials
+
+\[
+u_1(x)
+\quad\text{and}\quad
+v_1(x)
+\]
+
+have been constructed, both parties invoke the Vector Ring-OLE functionality introduced in the previous section.
+
+The functionality securely computes
+
+\[
+v_0(x)
+=
+u_0(x)\,u_1(x)
++
+v_1(x),
+\]
+
+without revealing either party's polynomial.
+
+The client receives only
+
+\[
+v_0(x),
+\]
+
+whereas the server learns only the randomly generated polynomial
+
+\[
+u_1(x).
+\]
+
+Suppose
+
+\[
+x_i\in X\cap Y.
+\]
+
+Since
+
+\[
+u_0(x_i)=0,
+\]
+
+the evaluated polynomial satisfies
+
+\[
+v_0(x_i)
+=
+v_1(x_i)
+=
+f(x_i).
+\]
+
+Therefore, every common element between the client and server sets reveals one valid evaluation of the Shamir secret sharing polynomial.
+
+Conversely, if
+
+\[
+x_i\notin Y,
+\]
+
+the polynomial
+
+\[
+v_1(x_i)
+\]
+
+contains the additional random masking term
+
+\[
+\left(
+\prod_{j=1}^{d}(x_i-y_j)
+\right)
+R(x_i),
+\]
+
+which prevents the client from recovering a valid evaluation of
+
+\[
+f(x).
+\]
+
+If the number of common elements satisfies
+
+\[
+|X\cap Y|
+\ge
+t,
+\]
+
+the client obtains at least
+
+\[
+t
+\]
+
+correct evaluations of
+
+\[
+f(x),
+\]
+
+which are sufficient to reconstruct the secret-sharing polynomial using Shamir interpolation. The recovered secret corresponds to the masked label
+
+\[
+\ell',
+\]
+
+from which the original label can subsequently be recovered. The complete label recovery procedure is presented in the following subsection.
+
+\paragraph{Label Recovery}
+
+At the end of the Vector Ring-OLE protocol, the client obtains the polynomial
+
+\[
+v_0(x)=u_0(x)u_1(x)+v_1(x),
+\]
+
+while the server retains the randomly generated polynomial
+
+\[
+u_1(x).
+\]
+
+Recall that for every common element
+
+\[
+x_i \in X\cap Y,
+\]
+
+the client obtains
+
+\[
+v_0(x_i)=f(x_i),
+\]
+
+since
+
+\[
+u_0(x_i)=0.
+\]
+
+Therefore, every common element contributes one valid evaluation point of the secret-sharing polynomial
+
+\[
+f(x).
+\]
+
+Let
+
+\[
+\mathcal{P}
+=
+\left\{
+(x_i,v_0(x_i))
+:
+x_i\in X\cap Y
+\right\}
+\]
+
+denote the set of recovered evaluation points.
+
+If the number of recovered evaluation points satisfies
+
+\[
+|\mathcal P|
+\ge
+t,
+\]
+
+the client possesses at least \(t\) distinct points on the polynomial
+
+\[
+f(x),
+\]
+
+whose degree is
+
+\[
+t-1.
+\]
+
+According to the properties of Shamir's Threshold Secret Sharing introduced in Section 2.2, a polynomial of degree
+
+\[
+t-1
+\]
+
+is uniquely determined by any collection of
+
+\[
+t
+\]
+
+distinct evaluation points. Consequently, the client reconstructs
+
+\[
+f(x)
+\]
+
+using polynomial interpolation.
+
+Once the polynomial has been reconstructed, the client evaluates
+
+\[
+f(0),
+\]
+
+which corresponds to the protected label
+
+\[
+\ell'
+=
+\operatorname{PRF}_{k}(\ell).
+\]
+
+Since the value stored in the polynomial is the output of a pseudorandom function rather than the original label, revealing
+
+\[
+f(0)
+\]
+
+does not disclose the server's label directly.
+
+To enable the client to recover the original label while preventing exhaustive search attacks, the server additionally computes
+
+\[
+h_{\ell}
+=
+H_{1}(\ell')
+\]
+
+and
+
+\[
+\Delta_{\ell}
+=
+H_{2}(\ell')
+\oplus
+\ell,
+\]
+
+where
+
+\[
+H_1
+\]
+
+and
+
+\[
+H_2
+\]
+
+are collision-resistant hash functions, and
+
+\[
+\oplus
+\]
+
+denotes the bitwise exclusive-or operation.
+
+After reconstructing
+
+\[
+\ell',
+\]
+
+the client first verifies its correctness by checking whether
+
+\[
+H_1(\ell')
+=
+h_{\ell}.
+\]
+
+If the verification succeeds, the original label is recovered as
+
+\[
+\ell
+=
+\Delta_{\ell}
+\oplus
+H_2(\ell').
+\]
+
+Otherwise, the reconstruction is considered unsuccessful and the protocol outputs
+
+\[
+\perp.
+\]
+
+The verification step prevents the client from accepting an incorrectly reconstructed polynomial, which may arise when fewer than \(t\) valid evaluation points are available. Furthermore, because the reconstructed value is first mapped through a pseudorandom function before being combined with the label, the protocol prevents the client from performing dictionary attacks against labels belonging to a small domain. Consequently, the server reveals the label only when the threshold condition is satisfied, while preserving the privacy of all non-matching database entries.
+
+The Threshold Labelled Private Set Intersection protocol described above assumes that the client and server already possess sets whose common elements correspond to matching features. However, biometric templates are represented as binary feature vectors rather than ordinary sets. The following section introduces the masked Oblivious Pseudorandom Function (mOPRF), which transforms the sampled binary feature vectors into private set representations while preventing either party from learning the intermediate values. This transformation enables the TLPSI protocol to be applied directly to privacy-preserving biometric matching.
+
+\begin{algorithm}[H]
+\caption{Threshold Labelled Private Set Intersection (TLPSI)}
+\label{alg:tlpsi}
+
+\textbf{Input:}
+
+Client:
+\[
+X=\{x_1,x_2,\ldots,x_n\}
+\]
+
+Server:
+\[
+Y=\{y_1,y_2,\ldots,y_m\},
+\]
+with an associated label $\ell$ for each server element and a matching
+threshold $t$.
+
+\textbf{Output:}
+
+The client recovers the server label only if
+
+\[
+|X\cap Y|\ge t.
+\]
+
+\begin{algorithmic}[1]
+
+\State Server encodes each label using Shamir's Threshold Secret Sharing.
+
+\State Server constructs the corresponding secret-sharing polynomial.
+
+\State Client constructs a polynomial representing its input set.
+
+\State Server constructs polynomials corresponding to its labelled set.
+
+\State Client and server execute the Vector Ring-OLE protocol.
+
+\State Client receives polynomial evaluations corresponding to the
+intersection elements.
+
+\State If fewer than $t$ valid evaluations are obtained,
+    \Statex \hspace{\algorithmicindent} terminate and output $\perp$.
+
+\State Reconstruct the secret-sharing polynomial using polynomial
+interpolation.
+
+\State Recover the label by evaluating the reconstructed polynomial at
+
+\[
+f(0).
+\]
+
+\State Output the recovered label.
+
+\end{algorithmic}
+\end{algorithm}
+Algorithm~\ref{alg:tlpsi} summarizes the complete execution flow of the
+Threshold Labelled Private Set Intersection protocol. The server first
+protects each label using Shamir's Threshold Secret Sharing, ensuring
+that the label can only be reconstructed from at least $t$ valid
+evaluations. Subsequently, both parties execute the Vector Ring-OLE
+protocol to securely evaluate the required polynomials without revealing
+their underlying sets. Finally, if the number of common elements reaches
+the predefined threshold, the client reconstructs the secret-sharing
+polynomial through polynomial interpolation and recovers the associated
+label; otherwise, no information about the label is revealed.
+
+\subsubsection{Pseudorandom Function}
+
+The Fuzzy Labelled Private Set Intersection (FLPSI) protocol employs a
+Pseudorandom Function (PRF) to securely encode biometric sub-samples and
+to protect the labels associated with enrolled biometric templates.
+Unlike a conventional hash function, a PRF requires a secret key, ensuring
+that only parties possessing the key can correctly evaluate the function.
+
+Formally, let
+
+\[
+F:\mathcal{K}\times\mathcal{X}\rightarrow\mathcal{Y}
+\]
+
+be a keyed function, where $\mathcal{K}$ denotes the key space,
+$\mathcal{X}$ the input domain, and $\mathcal{Y}$ the output range.
+Given a secret key
+
+\[
+k\in\mathcal{K},
+\]
+
+the function
+
+\[
+F_k(x)
+\]
+
+maps every input
+
+\[
+x\in\mathcal{X}
+\]
+
+to a deterministic output in $\mathcal{Y}$.
+
+A secure pseudorandom function satisfies two important properties.
+
+\begin{itemize}
+    \item \textbf{Determinism:} Evaluating the function using the same
+    secret key and the same input always produces the same output.
+    Consequently,
+
+    \[
+    F_k(x)=F_k(x),
+    \]
+
+    allowing different parties possessing the same key to independently
+    compute identical outputs.
+
+    \item \textbf{Pseudorandomness:} Without knowledge of the secret key,
+    the output of the function is computationally indistinguishable from
+    a uniformly random value. Therefore, an adversary observing
+    $F_k(x)$ cannot efficiently recover either the secret key or the
+    original input.
+\end{itemize}
+
+These properties make PRFs particularly suitable for privacy-preserving
+set intersection protocols. Equal inputs evaluated under the same secret
+key produce identical outputs, thereby preserving equality, while
+different inputs appear as random and unrelated values to any party
+without knowledge of the key.
+
+In Bui and Cong's authentication framework~\cite{BuiCong25}, the PRF serves two distinct
+purposes. First, it transforms sampled biometric features into
+pseudorandom values before they participate in the Threshold Labelled
+Private Set Intersection protocol, preventing either participant from
+learning the underlying biometric information. Second, the server applies
+the PRF to each user's label before embedding it into the Shamir
+secret-sharing polynomial, ensuring that the reconstructed value does not
+directly reveal the original label. The masked Oblivious Pseudorandom
+Function described in the following subsection builds upon this primitive
+to securely evaluate the PRF without exposing either the secret key or
+the client's biometric data.
+\subsubsection{Masked Oblivious Pseudorandom Function}
+
+The Threshold Labelled Private Set Intersection protocol described in the previous subsection assumes that both parties already possess private sets whose common elements correspond to matching features. In the biometric authentication setting, however, the client and the server initially hold binary feature vectors rather than sets. A direct conversion from binary vectors to sets by applying publicly known sub-sampling masks would expose portions of the underlying biometric template whenever a match occurs.
+
+To eliminate this leakage, the FLPSI protocol introduces a \emph{Masked Oblivious Pseudorandom Function} (mOPRF). The mOPRF simultaneously performs sub-sampling and pseudorandom encoding of the sampled values, ensuring that neither party learns the intermediate sub-samples in plaintext while still producing consistent outputs for identical masked inputs.
+
+Let
+
+\[
+\mathbf{x}
+\in
+\{0,1\}^{d}
+\]
+
+denote the client's binary feature vector and
+
+\[
+\mathbf{y}
+\in
+\{0,1\}^{d}
+\]
+
+denote one server template.
+
+Suppose the parties publicly agree on a collection of sampling masks
+
+\[
+\mathcal{M}
+=
+\{
+m_1,m_2,\ldots,m_T
+\},
+\]
+
+where every mask
+
+\[
+m_j
+\in
+\{0,1\}^{d}
+\]
+
+contains exactly
+
+\[
+d_s
+\]
+
+non-zero positions.
+
+A straightforward approach would construct the sampled subsets
+
+\[
+\mathbf{x}\wedge m_j,
+\qquad
+\mathbf{y}\wedge m_j,
+\]
+
+for every
+
+\[
+j\in[T],
+\]
+
+where
+
+\[
+\wedge
+\]
+
+denotes the bitwise AND operation.
+
+Although this approach successfully converts the feature vectors into collections of subsets, the sampled values themselves become visible whenever a successful intersection occurs. Consequently, the client may learn partial information regarding the server's enrolled biometric template, violating the desired privacy guarantees of the authentication protocol.
+
+To prevent this leakage, every sampled subset is first processed by a pseudorandom function before participating in the Threshold Labelled PSI protocol.
+
+\begin{definition}[Masked Oblivious Pseudorandom Function]
+
+Let
+
+\[
+F
+:
+\mathcal{K}\times\mathcal{M}
+\rightarrow
+\mathcal{D}
+\]
+
+denote a secure pseudorandom function.
+
+The receiver inputs
+
+\[
+\mathbf{x}
+\in
+\{0,1\}^{d},
+\]
+
+while the sender inputs
+
+\[
+k
+\in
+\mathcal{K},
+\]
+
+together with a collection of sampling masks
+
+\[
+\mathcal{M}
+=
+\{
+m_1,m_2,\ldots,m_T
+\}.
+\]
+
+The functionality returns to the receiver
+
+\[
+X'
+=
+\{
+F_k(\mathbf{x}\wedge m_1),
+F_k(\mathbf{x}\wedge m_2),
+\ldots,
+F_k(\mathbf{x}\wedge m_T)
+\},
+\]
+
+without revealing either the secret key
+
+\[
+k
+\]
+
+or the masked inputs.
+
+\end{definition}
+
+Since the sender possesses both the secret key
+
+\[
+k
+\]
+
+and the collection of sampling masks, it locally computes the corresponding masked outputs for every enrolled template
+
+\[
+\mathbf{y}_i
+\in
+\mathcal{D}.
+\]
+
+For the
+
+\[
+i^{\text{th}}
+\]
+
+database entry, the sender constructs
+
+\[
+Y_i'
+=
+\{
+F_k(\mathbf{y}_i\wedge m_1),
+F_k(\mathbf{y}_i\wedge m_2),
+\ldots,
+F_k(\mathbf{y}_i\wedge m_T)
+\}.
+\]
+
+Thus, every enrolled biometric template is transformed into a set of pseudorandom values that can subsequently participate in the Threshold Labelled PSI protocol.
+
+An important property of the pseudorandom function is determinism. Whenever the client and the server possess identical masked sub-samples,
+
+\[
+\mathbf{x}\wedge m_j
+=
+\mathbf{y}_i\wedge m_j,
+\]
+
+both parties obtain the same pseudorandom output
+
+\[
+F_k(\mathbf{x}\wedge m_j)
+=
+F_k(\mathbf{y}_i\wedge m_j).
+\]
+
+Conversely, distinct masked inputs produce computationally indistinguishable pseudorandom values with overwhelming probability. Consequently, the equality of two masked sub-samples is preserved without revealing their underlying binary representation.
+
+After executing the masked OPRF protocol, the client obtains the transformed set
+
+\[
+X',
+\]
+
+while the server computes the corresponding transformed sets
+
+\[
+\{
+Y_1',
+Y_2',
+\ldots,
+Y_N'
+\}.
+\]
+
+These pseudorandom sets are subsequently used as the inputs to the Threshold Labelled PSI protocol described in Section 3.3. Since identical sub-samples remain equal after the pseudorandom transformation, the threshold intersection property is preserved while preventing either party from learning the sampled biometric bits in plaintext.
+
+\subsubsection{Fuzzy Labelled Private Set Intersection Protocol}
+
+The complete FLPSI protocol combines the masked Oblivious Pseudorandom Function introduced in the previous subsection with the Threshold Labelled Private Set Intersection protocol described in Section 3.3. The masked OPRF converts binary feature vectors into pseudorandom set representations, while the TLPSI protocol securely determines whether these transformed sets satisfy the required threshold condition.
+
+Let the client possess a binary feature vector
+
+\[
+\mathbf{x}\in\{0,1\}^{d},
+\]
+
+and let the server maintain the labelled database
+
+\[
+\mathcal{D}
+=
+\{
+(\mathbf{y}_1,\ell_1),
+(\mathbf{y}_2,\ell_2),
+\ldots,
+(\mathbf{y}_N,\ell_N)
+\},
+\]
+
+where
+
+\[
+\mathbf{y}_i\in\{0,1\}^{d}
+\]
+
+is the enrolled binary feature vector of the \(i^{\text{th}}\) user and
+
+\[
+\ell_i
+\]
+
+is the corresponding label.
+
+The protocol proceeds in two stages. During the first stage, the parties execute the masked OPRF protocol to obtain pseudorandom representations of the sampled feature vectors. During the second stage, these pseudorandom sets are supplied to the Threshold Labelled PSI protocol to determine whether the number of matching sub-samples exceeds the predefined threshold.
+
+\paragraph{Initialization}
+
+Before protocol execution, the server samples a uniformly random secret key
+
+\[
+k
+\leftarrow
+\mathcal{K},
+\]
+
+for the pseudorandom function
+
+\[
+F_k(\cdot).
+\]
+
+The server also generates a family of sampling masks
+
+\[
+\mathcal{M}
+=
+\{
+m_1,m_2,\ldots,m_T
+\},
+\]
+
+where every mask
+
+\[
+m_j
+\in
+\{0,1\}^{d}
+\]
+
+contains exactly
+
+\[
+d_s
+\]
+
+non-zero positions.
+
+The parameters
+
+\[
+(T,d_s,t)
+\]
+
+are selected during system initialization to achieve the desired balance between the false acceptance rate and the false rejection rate. These masks remain fixed throughout protocol execution and are reused for all authentication sessions.
+
+\paragraph{Pseudorandom Sub-sampling}
+
+The client and the server jointly execute the masked OPRF protocol using the feature vector
+
+\[
+\mathbf{x}
+\]
+
+and the collection of sampling masks
+
+\[
+\mathcal{M}.
+\]
+
+At the completion of the protocol, the client receives
+
+\[
+X'
+=
+\{
+F_k(\mathbf{x}\wedge m_1),
+F_k(\mathbf{x}\wedge m_2),
+\ldots,
+F_k(\mathbf{x}\wedge m_T)
+\},
+\]
+
+without learning either the secret key
+
+\[
+k
+\]
+
+or the sampling masks used internally by the protocol.
+
+Meanwhile, the server locally evaluates the pseudorandom function for every enrolled template to obtain
+
+\[
+Y_i'
+=
+\{
+F_k(\mathbf{y}_i\wedge m_1),
+F_k(\mathbf{y}_i\wedge m_2),
+\ldots,
+F_k(\mathbf{y}_i\wedge m_T)
+\},
+\]
+
+for every
+
+\[
+i\in[N].
+\]
+
+The resulting pseudorandom values replace the original sampled feature vectors and serve as the inputs to the Threshold Labelled PSI protocol.
+
+A practical issue may arise when two different sampling masks produce identical pseudorandom outputs. Such duplicate values become more likely when the sampling size is small or when a large number of masks are employed. Duplicate elements may incorrectly increase the intersection size and therefore affect the correctness of the threshold comparison.
+
+To eliminate this ambiguity, every pseudorandom output is combined with the index of the corresponding sampling mask. Specifically, the client transforms its input into
+
+\[
+X''
+=
+\{
+X_1'
+\oplus1,
+X_2'
+\oplus2,
+\ldots,
+X_T'
+\oplus T
+\},
+\]
+
+while the server performs the identical transformation
+
+\[
+Y_i''
+=
+\{
+Y_{i,1}'
+\oplus1,
+Y_{i,2}'
+\oplus2,
+\ldots,
+Y_{i,T}'
+\oplus T
+\}.
+\]
+
+Since each sub-sample is now uniquely identified by its sampling position, duplicate values generated from different masks can no longer collide.
+
+\paragraph{Threshold Matching}
+
+For every enrolled biometric template, the server and the client execute the Threshold Labelled Private Set Intersection protocol using
+
+\[
+X''
+\]
+
+and
+
+\[
+Y_i''.
+\]
+
+The TLPSI protocol determines the cardinality of
+
+\[
+X''
+\cap
+Y_i'',
+\]
+
+without revealing any additional information regarding either participant's private input.
+
+If
+
+\[
+|X''\cap Y_i''|
+\ge
+t,
+\]
+
+the client successfully reconstructs the protected label
+
+\[
+\ell_i
+\]
+
+using the label recovery procedure described in Section 3.3.
+
+Otherwise,
+
+\[
+\perp
+\]
+
+is returned, indicating that the corresponding enrolled template does not satisfy the required similarity threshold.
+
+The correctness of the protocol follows from two observations.
+
+First, if two biometric feature vectors differ in at most
+
+\[
+d_k
+\]
+
+bit positions, the probability that at least
+
+\[
+t
+\]
+
+sampled subsets remain identical is overwhelmingly high for the selected protocol parameters.
+
+Second, the masked OPRF preserves equality between identical masked sub-samples while hiding their underlying binary representation. Consequently, identical biometric regions produce identical pseudorandom values, enabling the Threshold Labelled PSI protocol to identify sufficiently similar feature vectors without revealing any biometric information.
+
+The FLPSI protocol described above specifies the logical functionality required for privacy-preserving biometric authentication. The computational efficiency of the protocol is achieved through the Vector Ring Oblivious Linear Evaluation primitive introduced in Section 2, which realizes the underlying Threshold Labelled PSI functionality using a single Vector Ring-OLE instance. This optimization significantly reduces both the communication overhead and the online computation compared with previous constructions while preserving the security guarantees of the protocol.
+\begin{algorithm}[H]
+\caption{Fuzzy Labelled Private Set Intersection (FLPSI)}
+\label{alg:flpsi}
+
+\textbf{Input:}
+
+Client fingerprint feature vector
+
+\[
+B_c \in \{0,1\}^{N}
+\]
+
+Server database
+
+\[
+\mathcal{D}=\{(B_i,\ell_i)\}_{i=1}^{M}
+\]
+
+Matching threshold
+
+\[
+t
+\]
+
+\textbf{Output:}
+
+Authentication result and the corresponding label.
+
+\begin{algorithmic}[1]
+
+\State Extract the binary fingerprint feature vector from the client fingerprint.
+
+\State Generate the predefined binary masks.
+
+\State Apply each mask to obtain multiple fingerprint sub-samples.
+
+\State Execute the masked Oblivious Pseudorandom Function (mOPRF) on every sub-sample.
+
+\State Construct the transformed client set
+\[
+X.
+\]
+
+\For{each enrolled fingerprint $(B_i,\ell_i)$ in the server database}
+
+    \State Generate the corresponding masked sub-samples.
+
+    \State Evaluate the mOPRF on every server sub-sample.
+
+    \State Construct the transformed server set
+    \[
+    Y_i.
+    \]
+
+    \State Execute the Threshold Labelled Private Set Intersection (TLPSI)
+    protocol between $X$ and $Y_i$.
+
+    \If{the reconstructed label is valid}
+        \State Authenticate the client.
+        \State Output the recovered label.
+        \State \Return
+    \EndIf
+
+\EndFor
+
+\State Reject the authentication request.
+
+\end{algorithmic}
+\end{algorithm}
+Algorithm~\ref{alg:flpsi} summarizes the complete execution flow of the
+proposed fingerprint authentication framework. The client first extracts
+its fingerprint feature vector, generates masked sub-samples, and
+transforms them using the masked Oblivious Pseudorandom Function.
+Similarly, the server preprocesses each enrolled fingerprint template
+using the same masking strategy and evaluates the corresponding mOPRF
+values. The client and server subsequently execute the Threshold
+Labelled Private Set Intersection protocol, which reveals a protected
+label only when the number of matching transformed features satisfies
+the predefined threshold. Successful reconstruction of the label
+indicates a valid authentication, whereas failure to reconstruct any
+label results in rejection of the authentication request.
+% ──────────────────────────────────────────────────────────────────────────────
+% The security analysis is shared verbatim with paper.tex so the two documents
+% cannot diverge. See sections/06-security.tex.
+\input{sections/06-security}
+
+\section{Implementation}
+% ──────────────────────────────────────────────────────────────────────────────
+
+The quantiser of \S4.2 is implemented as a small, training-free NumPy module. A
+\texttt{fit} routine estimates the public constants
+$(\boldsymbol{\mu},\mathbf{P},\boldsymbol{\tau})$ from a calibration split - drawing
+the Gaussian blocks from a fixed seed, orthonormalising each by QR, optionally
+pre-composing the whitening diagonal, and recording the per-bit medians - and
+serialises them beside the model; \texttt{transform} then reduces to a single
+$128\times16$ matrix multiply and a per-bit threshold, emitting a 128-bit
+(\texttt{uint8[128]}) code. The same configuration flags (centre / whiten / Super-Bit
+/ balance) drive the ablation ladder of Table~\ref{tab:eer}.
+
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\section{Experimental Evaluation}
+\label{sec:eval}
+% ──────────────────────────────────────────────────────────────────────────────
+
+
+
+\subsection{Datasets and Metrics}
+
+
+We train and evaluate our system on the \textbf{SOCOFing} (Sokoto Coventry Fingerprint) dataset, a public collection of 6,000 real fingerprint images belonging to 600 subjects. To test generalization under adverse conditions, the dataset includes synthetic alterations (Altered-Easy, Altered-Medium, Altered-Hard). Following the standard open-set evaluation protocol, we split the identities such that the test set contains identities entirely unseen during training.
+
+The primary evaluation metric is the Equal Error Rate (EER), the threshold where the False Acceptance Rate (FAR) and False Rejection Rate (FRR) are equal. A lower EER indicates a better biometric representation. We also evaluate the system against the floating-point baseline ceiling established by systems like Blind-Touch.
+
+\subsection{Authentication Accuracy}
+
+
+The baseline Blind-Touch system achieves a $\sim 0.7\%$ EER on the SOKOTO/SOCOFing dataset using unconstrained floating-point matching. Our full $224\times224$ NeuralPSI feature extractor is comparable to this baseline (the intervals overlap) in plaintext ($0.33\%$ EER). When enforcing our strict privacy guarantees through the 128-bit Super-Bit quantization bridge, the accuracy drops marginally to $1.88\%$ EER. This $\approx 1.55$ percentage point increase in EER represents the direct information-theoretic cost of mapping 16 continuous dimensions into a rigid 128-bit Hamming space for FLPSI compatibility. Given that this trade-off completely removes the HE scaling bottleneck, the resulting sub-$2\%$ EER remains highly competitive for large-scale deployments.
+
+Table~\ref{tab:eer} reports the equal-error rate (EER) of the quantiser against the
+floating-point ceiling - the score on which homomorphic encryption operates - on
+SOCOFing under an open-set protocol (held-out identities; enrolment on the Real print,
+genuine probe on the Altered-Easy print; $1{,}200$ genuine and $240{,}000$ impostor
+pairs).
 
 \begin{table}[h]
 \centering
-\small
-\begin{tabular}{lccp{2.1cm}p{3.1cm}}
-\toprule
-Method & Bits & EER & Gen./Imp.\ Hamming & Verdict \\
-\midrule
-Naive sign            & 16  & 10.12\% & 0.59 / 3.79 (of 16)  & rejected: lopsided bits \\
-ITQ                    & 16  & 5.55\%  & 0.98 / 8.00 (of 16)  & rejected: capacity-limited \\
-\textbf{Super-Bit}     & \textbf{128} & \textbf{1.88\%} & \textbf{8 / 64 (of 128)} & \textbf{chosen} \\
-Multi-bit / Manhattan  & 128 & ---     & ---                   & rejected: correlated bit-flips \\
-$p$-stable / E2LSH     & 128 & ---     & ---                   & rejected: integer buckets, not balanced \\
-End-to-end deep hashing & 128 & ---    & ---                   & rejected: breaks i.i.d.\ error model \\
-\bottomrule
-\end{tabular}
-\caption{Comparison of binarization methods. ``Rejected'' methods were considered and
-rejected on analytical grounds (not empirically evaluated); see discussion below.}
-\label{tab:binarize-compare}
-\end{table}
-
-Two further design choices are worth justifying explicitly. \textbf{Why 128 bits and not
-16 or 256?} 128 bits gives an $8\times$ expansion of the 16-D source, which is enough for
-balanced bits (each bit is a genuinely different random projection direction, since 8
-orthonormalised blocks of 16 span the available information) while keeping the per-record
-cost in Stage~3 small; going further would not add information, since the source vector has
-only 16 real degrees of freedom. \textbf{Why is multi-bit (Manhattan/Gray) encoding
-rejected?} Encoding the magnitude of $e_k$ using several bits per dimension means a single
-analog error (a small shift in $e_k$) can flip a \textbf{contiguous block} of bits at once.
-flash-psi's sub-sampling analysis (Section~5.3) assumes bit errors are close to
-\textbf{independent} across positions; correlated multi-bit errors break this assumption
-and invalidate the false-accept/false-reject guarantees.
-
-% =====================================================================
-\section{Stage 3: Fuzzy Labelled Private Set Intersection}
-% =====================================================================
-
-\subsection{Why PSI Instead of Homomorphic Encryption}
-
-Blind-Touch's Homomorphic Encryption (HE) approach keeps the 16-float vector encrypted at
-all times and computes the match score on ciphertexts. This is accurate but expensive: it
-requires a 117\,MB rotation key, and the CKKS ciphertext slot-packing caps practical
-database size near 5{,}000 users. The Fuzzy Labelled PSI protocol (flash-psi) instead
-operates on the \textbf{binary} code from Stage~2, using lightweight correlated-randomness
-primitives instead of encryption, and scales linearly to millions of entries while also
-revealing a \textbf{label} on a match --- something HE cannot do.
-
-\subsection{The Four Cryptographic Primitives}
-
-\subsubsection{Primitive 1: VOLE (Vector Oblivious Linear Evaluation)}
-
-VOLE is the foundation. It produces correlated randomness between two parties without
-either learning the other's secret:
-
-\begin{equation}
-w = \Delta \cdot u + v ,
-\end{equation}
-
-where the receiver holds $(\Delta, w)$ and the sender holds $(u, v)$; neither can recover
-the other's values from their own share. $\Delta$ is a single field element, while $u,v,w$
-are vectors over the same field. VOLE is built from the \textbf{LPN} (Learning Parity with
-Noise) hardness assumption and can be generated in well under a second.
-
-\subsubsection{Primitive 2: Vector Ring-OLE}
-
-To check Alice's code against all $m$ database entries simultaneously, the protocol must
-multiply many polynomials. A naive approach needs $m$ independent OLE instances. Vector
-Ring-OLE instead represents the computation as a single pair of polynomials $u(x), v(x)$ of
-degree $d$ and evaluates the VOLE relation at $2d+1$ fixed points, exploiting the identity
-
-\begin{equation}
-u(x)\cdot u'(x) \ \text{is uniquely determined by its values at } 2d+1 \text{ points,}
-\end{equation}
-
-since the product has degree $2d$. This reduces the number of required VOLE instances from
-$m$ to $2d+1$ --- independent of the database size $m$ --- roughly halving communication
-compared to prior constructions.
-
-\subsubsection{Primitive 3: The Zero-Polynomial Trick (TLPSI)}
-
-This is the actual matching logic. The receiver (Alice) encodes her $d$ sub-sampled values
-$\{x_1,\ldots,x_d\}$ as the roots of a polynomial:
-
-\begin{equation}
-u_0(x) = \prod_{i=1}^{d} (x - x_i), \qquad \text{so that } u_0(x_i) = 0 \ \ \forall i.
-\end{equation}
-
-After running Vector Ring-OLE with the sender's (Bob's) polynomials $u_1(x), v_1(x)$ (where
-$v_1$ encodes Shamir shares of the database labels at the sender's own sub-sampled values),
-Alice obtains
-
-\begin{equation}
-v_0(x) = u_0(x)\,u_1(x) + v_1(x).
-\end{equation}
-
-Evaluating at her own points, the $u_0(x_i)=0$ property \textbf{cancels the masking term}:
-
-\begin{equation}
-v_0(x_i) = u_0(x_i)\,u_1(x_i) + v_1(x_i) = v_1(x_i).
-\end{equation}
-
-If $x_i$ also equals one of Bob's sub-sampled values (an intersection point), $v_1(x_i)$ is
-a valid \textbf{Shamir share} of the label; otherwise $v_1(x_i)$ is an unrelated,
-effectively random field element. The receiver thus learns a usable share \emph{exactly}
-at intersection points and nothing elsewhere.
-
-\subsubsection{Primitive 4: Shamir Secret Sharing}
-
-A label $\ell$ is hidden inside a degree-$(t-1)$ polynomial,
-
-\begin{equation}
-f(x) = \ell + r_1 x + r_2 x^2 + \cdots + r_{t-1}x^{t-1}, \qquad f(0) = \ell,
-\end{equation}
-
-with random coefficients $r_1,\ldots,r_{t-1}$. For threshold $t=2$ this is simply
-$f(x) = \ell + r\cdot x$. Given any $t$ pairs $(x_i, f(x_i))$, Lagrange interpolation
-recovers the secret exactly:
-
-\begin{equation}
-\ell = f(0) = \sum_{i=1}^{t} f(x_i) \prod_{j \neq i} \frac{-x_j}{x_i - x_j} .
-\end{equation}
-
-Fewer than $t$ shares reveal \textbf{zero} information about $\ell$
-(information-theoretic security). In flash-psi, each of the $T$ sub-sampling masks that
-``passes'' for a database row contributes one valid share; the label is recovered once at
-least $t$ masks pass.
-
-\subsection{Sub-Sampling and Masking: The Probability Model}
-
-Rather than compare all $d=128$ bits at once, the protocol draws $T$ independent random
-\textbf{masks}, each of fixed weight $w$ (i.e.\ selecting exactly $w$ of the $d$ bit
-positions). Two codes ``sub-match'' on a mask if they agree on every position the mask
-selects.
-
-\textbf{Probability a mask passes.} If two codes differ in exactly $h$ positions (Hamming
-distance $h$), a mask of weight $w$ "passes" (selects none of the $h$ differing positions)
-with probability
-
-\begin{equation}
-P_{\text{pass}}(h) \;=\; \frac{\dbinom{d-h}{w}}{\dbinom{d}{w}} .
-\end{equation}
-
-With $T$ independent masks, the expected number of passing masks is
-$\mathbb{E}[\text{passes}] = T \cdot P_{\text{pass}}(h)$. A match is declared when at least
-$t$ masks pass.
-
-\textbf{Numeric evaluation for the production parameters} ($d=128$, $w=14$, $T=64$,
-$t=2$), using the genuine and impostor Hamming distances measured in Section~4.5
-($h_{\text{gen}}\approx 8$, $h_{\text{imp}}\approx 64$):
-
-\begin{align}
-P_{\text{pass}}(8)  &= \frac{\binom{120}{14}}{\binom{128}{14}} \approx 0.385,
-&\mathbb{E}[\text{passes}_{\text{gen}}] &= 64 \times 0.385 \approx 25 \ \gg t=2, \\[4pt]
-P_{\text{pass}}(64) &= \frac{\binom{64}{14}}{\binom{128}{14}} \approx 2.7\times10^{-5},
-&\mathbb{E}[\text{passes}_{\text{imp}}] &= 64 \times 2.7\times10^{-5} \approx 1.7\times10^{-3} \ \ll t=2.
-\end{align}
-
-The genuine pair clears the threshold by a wide margin ($11.5 \gg 2$) while the impostor
-pair essentially never produces a single passing mask. This large numerical gap is what
-gives the protocol both a very low false-reject rate and a very low false-accept rate
-simultaneously.
-
-\textbf{Privacy of the masks.} If the masks were public, a passing match would leak which
-$w$ bit positions of Bob's record equal Alice's --- after enough masks, Bob's entire record
-could be reconstructed. flash-psi therefore evaluates the masks through a \textbf{masked
-OPRF} --- a garbled circuit evaluating an AES-based PRF: Alice receives only $\mathrm{PRF}_k(x \wedge
-m_i)$, a pseudorandom value that reveals nothing about the mask $m_i$ or about Bob's bits at
-the selected positions.
-
-\subsection{Worked Example: Real Match Decision}
-
-Continuing the running example from Stage~2, Alice's 128-bit code (a probe capture of
-identity \texttt{100\_left\_index}) is matched against Bob's enrolled database of $m=50$
-records using the real flash-psi binary, with parameters $w=14$, $T=64$, $t=2$:
-
-\begin{center}
-\begin{tabular}{ll}
-\toprule
-Database size & $m = 50$ enrolled records \\
-Query code & 128-bit Super-Bit code from Section~4.5 \\
-Sub-sampling masks & $T = 64$, weight $w = 14$ \\
-Shamir threshold & $t = 2$ \\
-\textbf{Matched row} & \textbf{row 0} \\
-\textbf{Protocol time} & \textbf{72\,ms} \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-The protocol correctly returns only the enrolled record belonging to the same finger and
-recovers its Shamir-shared label. The label is an application-defined identifier attached to
-the record at enrolment --- in our SOCOFing evaluation it is simply the enrolled finger's
-identity string, while in an applied deployment it could be any record (illustrative):
-
-\begin{equation}
-\text{label} = \text{\texttt{100\_left\_index}} \quad \text{(enrolment id)},
-\end{equation}
-
-revealed to the authorised party in $\approx$72 milliseconds, with no Homomorphic Encryption and
-no large key material exchanged. In repeated trials with independently sampled impostor
-codes, the matched-row set returned by the protocol is always empty, consistent with the
-near-zero $\mathbb{E}[\text{passes}_{\text{imp}}]$ computed above.
-
-\subsection{Why PSI is Best}
-
-\begin{table}[h]
-\centering
-\begin{tabular}{lcc}
-\toprule
-Property & Blind-Touch (HE) & Neural-PSI (flash-psi) \\
-\midrule
-Practical scale          & $\sim$5{,}000 users (CKKS slot cap) & 1{,}000{,}000+ users \\
-Server key material      & 117\,MB Galois key   & none (short VOLE seeds) \\
-Label disclosure         & no (score only)       & yes (patient label) \\
-Per-record cost at scale & capped, cannot exceed slot limit & linear, $\approx$0.17\,ms/record \\
-Security assumption      & RLWE                  & LPN \\
-\bottomrule
-\end{tabular}
-\caption{Why the PSI backend is preferred over Homomorphic Encryption for this system.}
-\label{tab:he-vs-psi}
-\end{table}
-
-% =====================================================================
-\section{End-to-End Results}
-% =====================================================================
-
-\subsection{Full Pipeline Summary}
-
-\begin{table}[h]
-\centering
-\begin{tabular}{clll}
-\toprule
-Stage & Input & Output & Location \\
-\midrule
-0 & scanner image & $96\times96$ (or $224\times224$) pixels & client \\
-1 & pixel image & 16-D float vector $e$ & client, plaintext \\
-2 & 16-D float $e$ & 128-bit binary code $b$ & client, the bridge \\
-3 & 128-bit code $b$ + database & matched row + label & client$\,\leftrightarrow\,$server, private \\
-\bottomrule
-\end{tabular}
-\caption{The complete Neural-PSI pipeline, stage by stage.}
-\end{table}
-
-\subsection{EER Ladder (Final Results)}
-
-\begin{table}[h]
-\centering
-\begin{tabular}{lcc}
-\toprule
-Representation & Bits & EER (224$\times$224, 150-epoch model) \\
-\midrule
-Float embedding (HE ceiling)  & ---  & 0.33\% \\
-Naive sign binarization        & 16   & 10.12\% \\
-ITQ binarization                & 16   & 5.55\% \\
-\textbf{Super-Bit binarization (chosen)} & \textbf{128} & \textbf{1.88\%} \\
-\bottomrule
-\end{tabular}
-\caption{Final accuracy ladder. The Super-Bit code is within 1.55 percentage points of the
-floating-point ceiling that Homomorphic Encryption would match on.}
-\end{table}
-
-\subsection{Timing and Scaling}
-
-\begin{table}[h]
-\centering
+\caption{Open-set EER on SOCOFing. The \emph{float} row is the accuracy ceiling that
+homomorphic encryption matches on; every other row is a $d$-bit binary code fed to
+FLPSI. Lower is better.}
+\label{tab:eer}
 \begin{tabular}{lccc}
-\toprule
-Database size $m$ & flash-psi time & Per-record & Blind-Touch (HE) \\
-\midrule
-1{,}000     & 0.20\,s    & 0.20\,ms & feasible \\
-5{,}000     & 0.84\,s    & 0.17\,ms & $\sim$0.65\,s (4-server cluster) \\
-10{,}000    & 1.67\,s    & 0.17\,ms & infeasible (slot cap) \\
-50{,}000    & 8.60\,s    & 0.17\,ms & infeasible \\
-100{,}000   & 16.2\,s    & 0.16\,ms & infeasible \\
-1{,}000{,}000 & $\sim$162\,s (est.) & 0.16\,ms & infeasible \\
-\bottomrule
+\hline
+Representation & Bits & 96$\times$96 / 6-epoch CNN & 224$\times$224 / 150-epoch CNN \\
+\hline
+Float features \emph{(HE ceiling)}   & -  & 2.50\% & \textbf{0.33\%} \\
+$\mathrm{sign}(>0)$                  & 16   & 10.86\% & 10.12\% \\
+ITQ                                  & 16   & 7.12\%  & 5.55\% \\
+\textbf{Super-Bit (recommended)}     & 128  & 5.14\%  & \textbf{1.88\%} \\
+\quad{}+ metric whitening            & 128  & 3.91\%  & 2.98\% \\
+\hline
 \end{tabular}
-\caption{Measured flash-psi timing (real Rust protocol, $w=14$, $T=64$, $t=2$), linear at
-$\approx$0.17\,ms per database record across four orders of magnitude.}
 \end{table}
 
-\subsection{Multi-Finger Fusion: The Deployable Operating Point}
+Three findings stand out. First, a true $128$-bit Super-Bit code dominates both the
+na\"ive $\mathrm{sign}(>0)$ baseline and a $16$-bit ITQ code: expanding to $128$ bits by
+orthonormalised random projection - rather than repeating or learning $16$ bits -
+carries far more of the embedding's discriminative information into Hamming space.
+Second, \emph{the embedding, not the quantiser, is the bottleneck}: retraining the CNN
+at full $224\times224$ resolution drops the float ceiling from $2.50\%$ to $0.33\%$ and
+the Super-Bit code from $5.14\%$ to $1.88\%$, leaving the binarisation cost (binary
+minus float) at only $+1.55$ percentage points of EER. Third, \emph{metric whitening
+reverses sign with model quality}: it helps the weak $96$-px model
+($5.14\%\!\to\!3.91\%$) by reweighting noisy dimensions but hurts the well-trained one
+($1.88\%\!\to\!2.98\%$), whose geometry is already well-conditioned, so our recommended
+configuration omits it. The residual $\approx 1.5$-point gap between the $128$-bit code
+and the float ceiling is information-theoretic - $128$ sign bits of a $16$-dimensional
+vector carry at most $\sim 16$ bits of genuine information - and cannot be closed by a
+better quantiser, only by a wider embedding. These numbers are on SOCOFing
+Altered-Easy, a synthetic-alteration protocol; cross-sensor and cross-session evaluation
+is expected to be harder and remains a fair-evaluation caveat.
 
-The $1.88\%$ single-finger EER measures the \emph{representation} quality; the deployed decision
-uses a stronger operating point. At $w=14, t=2, T=64$ a single finger gives TAR $\approx 99\%$ at
-FAR $\approx 4.5\times10^{-2}$. This false-accept floor is a data-quality tail --- about $7\%$ of
-SOCOFing impostor pairs (predominantly low-quality right thumbs) fall within the genuine Hamming
-range --- not a flaw of the bridge. Enrolling $K$ independent fingers and requiring a $q$-of-$K$
-quorum crushes the false-accept rate geometrically, since different fingers are independent ridge
-patterns:
+\subsection{Communication Cost}
+
+
+We measured the query-time communication of the FLPSI matcher on the real protocol
+reference implementation, instrumented to count protocol bytes, at our operating point
+($d=128$, $T=64$, weight$\,=14$, $t=2$), sweeping the database size $N$
+(Table~\ref{tab:comm}). The garbled circuits and garbler labels are pre-shared once in
+setup, so the tracked figure is the online cost (oblivious-PRF $+$ TLPSI), counting both
+directions on the channel.
 
 \begin{table}[h]
 \centering
-\begin{tabular}{lcc}
-\toprule
-Rule & Fused TAR & Fused FAR \\
-\midrule
-single finger              & 98.2\% & $2.9\times10^{-2}$ \\
-2-of-2 (AND)               & 96.4\% & $8.2\times10^{-4}$ \\
-\textbf{2-of-3 (majority)} & \textbf{99.9\%} & $\mathbf{2.4\times10^{-3}}$ \\
-3-of-3 (all)               & 94.6\% & $2.4\times10^{-5}$ \\
-\bottomrule
+\caption{Online (per-authentication) communication vs.\ database size $N$, measured on
+the reference FLPSI implementation at the $d{=}128$, $T{=}64$, $w{=}14$, $t{=}2$ operating point.}
+\label{tab:comm}
+\begin{tabular}{lcccccc}
+\hline
+$N$ & 100 & 1{,}000 & 5{,}000 & 10{,}000 & 50{,}000 & extrapolated \\
+\hline
+Communication & 0.40\,MB & 1.76\,MB & 7.77\,MB & 15.28\,MB & 75.40\,MB &
+$\sim$150\,MB @ 100\,K \\
+\hline
 \end{tabular}
-\caption{Multi-finger fusion. 2-of-3 is the sweet spot: it \emph{raises} TAR to $99.9\%$
-(tolerating one poor finger) \emph{and} cuts FAR to $2.4\times10^{-3}$ versus a single finger;
-3-of-3 reaches FAR $\approx 2\times10^{-5}$.}
 \end{table}
 
-\subsection{Real-Crypto Validation}
+The cost is linear, $\text{comm}\approx 0.25\,\text{MB}+1.54\,\text{KB}\cdot N$, i.e.\
+$\sim$1.54\,KB per database record asymptotically. It extrapolates to $\sim$150\,MB at
+$N=100\,$K and $\sim$1.5\,GB at $N=1\,$M, matching Bui--Cong's reported 153\,MB and
+1533\,MB: NeuralPSI inherits FLPSI's communication profile essentially unchanged, because
+the quantiser contributes \emph{nothing} to communication - it only fixes the 128-bit
+width the protocol already assumes. Replacing the HE layer removes both Blind-Touch's
+117\,MB Galois key and its per-user ciphertext expansion. (These are single-host loopback
+measurements - protocol bytes, not wire latency.)
 
-The accept/reject numbers above are computed from a closed-form model of the sub-sampling
-decision (Section~5.3). To confirm that model is faithful, the actual $224$-model Super-Bit codes
-were pushed through the \emph{real} masked-OPRF $+$ garbled-circuit $+$ VOLE $+$ Shamir binary: a
-database of $B=100$ enrolled codes with $100$ genuine and $9{,}900$ impostor decisions at
-$w=14, t=2, T=64$. The real protocol matches the model to two significant figures:
+\subsection{End-to-End Latency}
 
-\begin{center}
-\begin{tabular}{lcc}
-\toprule
- & Real (crypto) & Predicted (model) \\
-\midrule
-TAR & $100.0\%$ & $99.5\%$ \\
-FAR & $4.43\times10^{-2}$ & $4.45\times10^{-2}$ \\
-\bottomrule
-\end{tabular}
-\end{center}
 
-The per-Hamming-distance accept rate also tracks the model across the whole fractional transition
-(e.g.\ at $h\in[25,30)$: real $58.5\%$ vs predicted $55.5\%$; at $h\in[35,40)$: $6.5\%$ vs
-$6.1\%$). The closed-form analysis used throughout is therefore faithful, and the bridge is
-correct end-to-end through the real cryptography, not merely in simulation.
-
-\subsection{Quantisation Dimension: Why 128 Bits}
-
-Re-encoding the same held-out fingers at other Super-Bit code lengths confirms $d=128$ is the knee
-of the accuracy/size trade-off:
+Table~\ref{tab:latency} breaks one authentication into its phases. The client-side work
+- the CNN forward pass and the Super-Bit quantisation - totals under a millisecond on
+a GPU (RTX 4050), so the bridge this paper introduces is not the bottleneck; query-time
+latency is dominated by the server-side FLPSI online scan at $\sim$0.16\,ms per record.
+The FLPSI \emph{offline} phase (VOLE-OT setup, garbling, TLPSI construction) is
+data-independent and runs before the query arrives, so it does not count against
+query-time latency.
 
 \begin{table}[h]
 \centering
+\caption{End-to-end latency by phase (one authentication). CNN and quantise are
+client-side; FLPSI is the real protocol binary on a single host.}
+\label{tab:latency}
 \begin{tabular}{lccc}
-\toprule
-$d$ (bits) & Super-Bit blocks & Storage/user & EER \\
-\midrule
-64           & 4  & 8\,B  & 2.38\% \\
-\textbf{128} & 8  & \textbf{16\,B} & \textbf{1.88\%} \\
-256          & 16 & 32\,B & 1.89\% \\
-\bottomrule
+\hline
+Phase & $N=1{,}000$ & $N=5{,}000$ & scaling \\
+\hline
+CNN forward (client, GPU)      & 0.80\,ms  & 0.80\,ms  & $O(1)$ in $N$ \\
+Quantise (client)              & $<$0.01\,ms & $<$0.01\,ms & $O(1)$ in $N$ \\
+FLPSI online (query-time)      & 187\,ms   & 823\,ms   & $\sim$0.16\,ms/record \\
+\textbf{Total query-time}      & \textbf{$\sim$188\,ms} & \textbf{$\sim$824\,ms} & - \\
+\hline
+FLPSI offline (preprocessing)  & 553\,ms   & 1{,}946\,ms & data-independent \\
+\hline
 \end{tabular}
-\caption{Dimension ablation. Accuracy saturates at $d=128$: $64\to128$ is a real gain,
-$128\to256$ is not (the 16-D source carries only $\sim$16 bits of information), while storage
-grows linearly. The flash-psi backend is also hardwired to $d=128$ (a compiled 128-bit equality
-circuit and a 128-element OPRF key), making it the native width.}
 \end{table}
 
-\subsection{Communication and Storage}
+\subsection{Storage}
 
-Measured on the real protocol binary, the online (per-authentication) communication is linear in
-database size $N$ at $\approx 1.54$\,KB per record, extrapolating to $\sim$150\,MB at $N=100$K and
-$\sim$1.5\,GB at $N=1$M --- matching the flash-psi paper's reported $153$\,MB and $1533$\,MB.
-Server-side storage is \textbf{16 bytes per user} (the 128-bit code) with no per-user key material,
-versus Blind-Touch's $\sim$1.67\,KB encrypted template plus a one-time $117$\,MB Galois key: a
-$\sim$107$\times$ per-template reduction with the large key eliminated. (These are single-host
-loopback measurements --- protocol bytes and compute, not wide-area network round-trip latency.)
+A NeuralPSI server template is a 128-bit code - \textbf{16 bytes per user} - with no
+per-user key material, against Blind-Touch's $\sim$1.67\,KB encrypted template
+(855\,KB per 512 users) plus a one-time 117\,MB Galois key (Table~\ref{tab:storage}). The
+per-template reduction is $\sim$107$\times$, and the 117\,MB key is eliminated entirely; for
+a 512-user database the server-side totals are $\sim$8\,KB versus $\sim$118\,MB.
 
-% =====================================================================
+\begin{table}[h]
+\centering
+\caption{Per-user server-side storage.}
+\label{tab:storage}
+\begin{tabular}{lccc}
+\hline
+System & Per-user template & One-time key & 512 users \\
+\hline
+Blind-Touch (HE/CKKS) & $\sim$1.67\,KB & 117\,MB Galois key & $\sim$855\,KB $+$ 117\,MB \\
+\textbf{NeuralPSI}    & \textbf{16\,B} & $\sim$0 & \textbf{$\sim$8\,KB} \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Ablation: Quantisation Dimension}
+
+
+We swept the Super-Bit code length $d\in\{64,128,256\}$ (i.e.\ $\{4,8,16\}$ orthonormalised
+$16\times16$ blocks), re-encoding the same held-out fingers under the same open-set protocol
+(Table~\ref{tab:dimabl}). Accuracy \emph{saturates at $d=128$}: shrinking to $64$ bits costs
+half a point of EER ($1.88\%\to2.38\%$), while doubling to $256$ bits buys nothing
+($1.88\%\to1.89\%$) yet doubles the template. This is the $16$-dimensional information ceiling
+of \S7.2 made concrete - $128$ sign projections already capture essentially all of the
+$\sim$16 bits of genuine information in the embedding, so the extra $128$ projections at $d=256$
+are redundant.
+
+\begin{table}[h]
+\centering
+\caption{Quantisation-dimension ablation: EER and storage vs.\ Super-Bit code length $d$
+(224 model, plain Super-Bit, held-out identities). Accuracy saturates at $d=128$.}
+\label{tab:dimabl}
+\begin{tabular}{lcccc}
+\hline
+$d$ (bits) & Super-Bit blocks & storage (B/user) & EER & separation $d'$ \\
+\hline
+64           & 4  & 8  & 2.38\% & 3.656 \\
+\textbf{128} & 8  & \textbf{16} & \textbf{1.88\%} & 3.778 \\
+256          & 16 & 32 & 1.89\% & 3.814 \\
+\hline
+\end{tabular}
+\end{table}
+
+The trade-off therefore favours $d=128$ on three counts. \emph{Accuracy}: it is the knee -
+the smallest code that reaches the floating-point-limited ceiling. \emph{Storage}: it grows
+linearly with $d$ ($8/16/32$ bytes/user), so $128$ is half the footprint of $256$ for equal
+accuracy. \emph{Communication}: the online cost is dominated by the $d$-independent TLPSI term
+(\S7.3), so it is essentially flat in $d$ - $d$ trades against storage and offline garbling,
+not online bandwidth. Finally, the reference FLPSI backend is built for $d=128$ (a compiled
+128-bit equality circuit and a 128-element OPRF key), making $128$ the natively supported width.
+
+% ──────────────────────────────────────────────────────────────────────────────
+% Parameter selection and error analysis, shared verbatim with paper.tex.
+% This is the measured operating point; the EER above describes the representation only.
+\input{sections/05-parameters}
+
+\section{Related Work}
+% ──────────────────────────────────────────────────────────────────────────────
+
+
+
+Our work intersects four major research threads in secure computation and biometrics:
+
+\textbf{(1) HE-Based Biometric Authentication.} Early work by Kim et al.~\cite{KimOhKim20} and Yang et al.~\cite{YangEtAl20} demonstrated that Homomorphic Encryption could be used for secure biometric matching. Systems like CryptoNets and, more recently, Blind-Touch pushed this boundary by integrating deep learning models directly with HE. While highly accurate, these systems fundamentally struggle with ciphertext expansion and the high computational cost of encrypted arithmetic.
+
+\textbf{(2) PSI and Fuzzy PSI.} Private Set Intersection (PSI) allows two parties to compute the intersection of their sets without revealing anything else. Uzun et al. (2021) and Chakraborti et al. (2023) extended this to "fuzzy" matching, allowing items to match if they are close under a specific metric. The state-of-the-art Fuzzy-Labeled PSI (FLPSI) by Bui--Cong (2025) achieves linear scalability but requires inputs to already be in a binary Hamming space.
+
+\textbf{(3) Locality-Sensitive Hashing for Biometrics.} Hashing techniques, such as BioHashing and various random projection codes, have long been explored to map continuous biometric features into discrete spaces. However, these techniques often suffer from significant accuracy degradation compared to modern CNN-based embeddings.
+
+\textbf{(4) Secure Computation for ML Inference.} Frameworks like SecureML and XONN have explored replacing or modifying neural network architectures to make them more amenable to secure multiparty computation, often by binarizing weights or activations.
+
+NeuralPSI is uniquely positioned as the first system to bridge the gap between HE-level perceptual accuracy (Thread 1) and FLPSI-level communication efficiency (Thread 2), using a specialized LSH quantization bridge (Thread 3) to strictly decouple feature extraction from secure inference (Thread 4).
+
+% ──────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\textbf{Accuracy Trade-Off.} The $+1.55$ percentage-point increase in EER ($0.33\%\to1.88\%$) is the direct price paid for binary quantization. While acceptable for many applications, future work could explore ternary or product quantization to recover this fractional accuracy loss without entirely abandoning the efficient Hamming-based protocol framework.
+
+\textbf{Plaintext Template Storage.} Unlike Blind-Touch, NeuralPSI stores the binary templates in plaintext on the server to enable the fast FLPSI scan. While the 128-bit strings lack direct biometric semantics, an adversary possessing both the public projection matrix $\mathbf{P}$ and the template $\tilde{\mathbf{y}}$ might attempt to approximate the original embedding direction. Future iterations could mitigate this by storing encrypted templates combined with an oblivious lookup protocol, trading some offline storage efficiency for stronger data-at-rest guarantees.
+
+\textbf{Semi-Honest Limitation.} Both NeuralPSI and the Blind-Touch baseline target semi-honest adversaries. Real-world deployments may require security against malicious actors who deviate from the protocol. Upgrading NeuralPSI to malicious security is future work. Cut-and-choose techniques exist for related structure-aware PSI settings~\cite{GarimellaEtAl23}, but those constructions target geometric-ball predicates rather than the threshold-PSI functionality used here, so their overheads do not transfer directly and we do not estimate them.
+
+% ──────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
-% =====================================================================
+% ──────────────────────────────────────────────────────────────────────────────
 
-This report has described the three computational stages of Neural-PSI: a convolutional
-neural network that maps a fingerprint image to a compact 16-dimensional embedding
-(Stage~1); a Super-Bit quantizer that bridges this floating-point embedding to a balanced
-128-bit binary code suitable for Hamming-distance matching (Stage~2); and the Fuzzy
-Labelled PSI protocol that privately matches this code against a database and reveals a
-label, using VOLE, Vector Ring-OLE, the zero-polynomial trick, and Shamir secret sharing
-(Stage~3). At every stage, the design choice made was justified against the alternatives
-that were tried and rejected.
 
-The system reaches an overall EER of $1.88\%$ on real, held-out SOCOFing fingerprints ---
-within $1.55$ percentage points of the $0.33\%$ ceiling that Homomorphic Encryption itself
-would achieve on the same embedding --- while eliminating the 117\,MB key requirement,
-removing the practical five-thousand-user scale ceiling, and adding native label
-disclosure that the original Homomorphic Encryption design cannot provide. Deployed with
-2-of-3 multi-finger fusion, the system reaches TAR $99.9\%$ at FAR $2.4\times10^{-3}$; these
-results are on the SOCOFing Altered-Easy protocol (an easy, single-dataset benchmark), and
-cross-sensor and cross-session validation remain future work. The dominant
-remaining source of error is the 16-dimensional embedding itself, not the binarization or
-matching stages, pointing toward a wider embedding as the most promising direction for
-further improving accuracy.
+
+Privacy-preserving cloud fingerprint authentication has historically forced a compromise: systems either achieve CNN-level accuracy at the cost of massive computational and communication overhead (via Homomorphic Encryption), or they achieve high scalability but fail to incorporate robust perceptual feature extraction.
+
+NeuralPSI demonstrates that CNN feature extraction and FLPSI-based matching are highly complementary. By recognizing that the CNN can handle the hard perceptual problem in plaintext on the client, and FLPSI can handle the strict privacy problem on the server, we decouple the two responsibilities. This decoupling is the key design principle of the system. 
+
+Using a public, 128-bit Super-Bit quantization bridge, we achieve a near-identical accuracy profile to the heavily-encrypted Blind-Touch system ($1.88\%$ EER), while completely eliminating the 117\,MB Galois key overhead. Furthermore, NeuralPSI reduces per-user server-side template storage by $\approx$107$\times$ (1.67\,KB to 16\,bytes). Its matching cost is linear in the database size with no slot-packing ceiling; we measure this to $N=5\times10^4$ and characterise it analytically beyond that.
+
+Ultimately, this decoupling principle generalizes well beyond fingerprint authentication. By bridging continuous neural embeddings into balanced Hamming spaces, this architecture can securely scale face, iris, and voice biometrics anywhere a CNN produces a compact feature vector.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\appendix
+% Shared verbatim with paper.tex.
+\input{sections/appendix-hybrids}
 
 \end{document}

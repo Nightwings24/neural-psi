@@ -1,0 +1,100 @@
+\section{Full Hybrid Sequence}
+\label{app:hybrids}
+
+This appendix gives the two simulators of \S\ref{sec:security} in full and expands \S\ref{sec:hybrids} with the distinguisher reductions. Throughout,
+$\mathcal{D}$ is a distinguisher, $\mathsf{view}_i$ its view in $\mathsf{H}_i$, and
+$\varepsilon_i = |\Pr[\mathcal{D}(\mathsf{view}_{i-1}) = 1] - \Pr[\mathcal{D}(\mathsf{view}_i) = 1]|$.
+
+\subsection*{Simulators}
+
+\paragraph{Simulator for a corrupt client.}
+$\mathsf{Sim}_{\mathsf{C}}$ receives $\tilde{\mathbf{x}}$ together with
+$(\mathsf{out}, \mathcal{L}_{\mathsf{C}})$ and must produce the mOPRF outputs, the
+sender-side silent-VOLE transcript, and the polynomials $\{\hat z_i\}_{i \in [N]}$.
+\begin{enumerate}\itemsep2pt
+\item Sample $r_j \leftarrow \mathcal{D}$ uniformly for $j \in [T]$ as the mOPRF outputs
+      and set $\hat X'' = \{ r_j \oplus j \}_{j\in[T]}$.
+\item For each $i \in [N]$: if $i \in \mathsf{out}$, sample
+      $\hat\ell'_i \leftarrow \mathbb{F}$ and a uniform polynomial $\hat f_i$ of degree
+      $\le \theta - 1$ with $\hat f_i(0) = \hat\ell'_i$; otherwise set $\hat f_i = \bot$.
+\item Build $\hat z_i$ by fixing its values on the $2T+1$ interpolation points: at points
+      indexed by $j \in S_i$ (read from $\mathcal{L}_{\mathsf{C}}$) set
+      $\hat z_i(x_j) = \hat f_i(x_j)$; at every other point sample uniformly from
+      $\mathbb{F}$; interpolate the unique polynomial of degree $\le 2T$.
+\item Emit the sender's correlation messages as uniform vectors of the appropriate length.
+\end{enumerate}
+
+\paragraph{Simulator for a corrupt server.}
+$\mathsf{Sim}_{\mathsf{S}}$ receives $D$ and the PRF key $k$ and outputs $\bot$, so its
+only task is the transcript. The single input-dependent message is
+$\Delta U = \Delta u(X)$ with $\Delta u = u_0 - u'_0$. It is worth stating precisely why
+this is simulatable, because the natural argument is slightly wrong: $\Delta U$ is
+\emph{not} uniform on $\mathbb{F}^{2T+1}$. It lies in the $(T{+}1)$-dimensional image of
+the evaluation map on polynomials of degree $\le T$. The simulator therefore samples a
+uniform polynomial of degree $\le T$ and outputs its evaluation vector, and simulates the
+silent-VOLE receiver messages with the base-VOLE simulator. Since $u'_0$ is uniform,
+$u_0 - u'_0$ is uniform \emph{in that subspace}, and the indistinguishability is
+statistical rather than computational.
+
+\subsection*{Hybrid reductions}
+
+\paragraph{$\mathsf{H}_0 \to \mathsf{H}_1$ (mOPRF).} Replace the masked-OPRF sub-protocol with
+$\mathcal{F}^{T}_{\mathsf{mOPRF}}$. Given $\mathcal{D}$ distinguishing these hybrids, build
+$\mathcal{B}$ against semi-honest mOPRF security: $\mathcal{B}$ runs the rest of the protocol
+honestly, forwards its challenge transcript in place of the sub-protocol messages, and outputs
+$\mathcal{D}$'s guess. Hence $\varepsilon_1 \le \varepsilon_{\mathsf{mOPRF}}$.
+
+\paragraph{$\mathsf{H}_1 \to \mathsf{H}_2$ (PRF).} Replace $F_k$ by a uniformly random function.
+The reduction $\mathcal{B}$ queries its oracle wherever the protocol evaluates $F_k$. The query
+budget is the subtlety: each mask restricts the PRF input to a domain of size $2^{w}$, so a
+distinguisher may enumerate the entire input table of $T \cdot 2^{w}$ entries, and $\mathcal{B}$
+must be allowed that many oracle calls. With $w = 14$ and $T = 64$ this is $2^{20}$, giving
+$\varepsilon_2 \le \varepsilon_{F}(q + T \cdot 2^{w})$. Omitting this factor is the most common
+way to understate the bound for this construction.
+
+\paragraph{$\mathsf{H}_2 \to \mathsf{H}_3$ (VOLE).} Replace the vector ring-OLE sub-protocol with
+$\mathcal{F}_{\mathsf{VROLE}}$. Indistinguishability follows from base-VOLE security and the LPN
+assumption used by the silent extension~\cite{BoyleEtAl19,RindalSchoppmann21}, so
+$\varepsilon_3 \le \varepsilon_{\mathsf{VROLE}} + \varepsilon_{\mathsf{LPN}}$.
+
+\paragraph{$\mathsf{H}_3 \to \mathsf{H}_4$ (statistical masking).} For every non-colliding
+evaluation point $x_j$, replace
+$v_1(x_j) = f(x_j) + \bigl(\prod_i (x_j - \yt_i)\bigr) \cdot R(x_j)$
+by a uniform element of $\mathbb{F}$.
+
+Fix a record $i$ and let $J = \{j \in [T] : j \notin S_i\}$ be its non-colliding points. At each
+such point $\prod_i (x_j - \yt_i) \neq 0$, so the map $R \mapsto (\prod_i(x_j - \yt_i) R(x_j))_{j
+\in J}$ is a scaled evaluation map. Since $R$ is uniform of degree $\le T$, its evaluation vector
+on any set of at most $T+1$ distinct points is uniform on $\mathbb{F}^{|J|}$ --- the evaluation
+map on $\deg R + 1$ points is a bijection onto $\mathbb{F}^{\deg R + 1}$. The masking terms are
+therefore jointly uniform, and the substitution is perfect, \emph{provided}
+\begin{equation}
+\label{eq:h4app}
+|J| \;\le\; \deg R + 1 \;=\; T + 1 .
+\end{equation}
+Here $|J| \le T$ always, so~\eqref{eq:h4app} holds unconditionally --- but it is a design
+constraint, not an accident: it fails if $\deg R$ is reduced below $T$ while tuning the
+sub-sample count downward to save communication.
+
+Applying this simultaneously at all $N$ records and all $2T+1$ points, the union bound over the
+event that any evaluation point coincides with a root gives
+$\varepsilon_4 \le N(2T+1)/|\mathbb{F}|$, which is the statistical term of~\eqref{eq:bound} and
+the reason $|\mathbb{F}|$ must be chosen with $N$ in view.
+
+\paragraph{$\mathsf{H}_4 \to \mathsf{H}_5$ (labels).} Replace $\ell'_i = F_k(\ell_i)$ by uniform
+field elements. Immediate from $\mathsf{H}_2$, in which $F_k$ is already a random function;
+$\varepsilon_5 = 0$.
+
+\paragraph{$\mathsf{H}_5 = \mathsf{Sim}_{\mathsf{C}}$.} In $\mathsf{H}_5$ every message the
+client sees is either uniform or determined by $(\xt, \mathsf{out}, \mathcal{L}_{\mathsf{C}})$,
+which is exactly the simulator's input, so the two distributions are identical by inspection.
+
+\paragraph{Composition across $N$ records.} All $N$ record instances share one receiver
+polynomial $u_0$ and one PRF key $k$, across records and sessions. This is why $\mathsf{H}_2$ and
+$\mathsf{H}_4$ are stated over the whole database rather than per record: $\mathsf{H}_2$ replaces
+the shared $F_k$ once, so its cost is charged once rather than $N$ times, and $\mathsf{H}_4$ is
+applied simultaneously at all $N(2T+1)$ points under a single union bound. A per-record
+invocation of a single-instance theorem would not establish this, because correlated reuse across
+instances is precisely where such compositions fail.
+
+Summing the terms gives~\eqref{eq:bound}.

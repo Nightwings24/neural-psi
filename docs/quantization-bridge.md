@@ -212,7 +212,7 @@ python3 07_superbit_eer.py --img 224 --ckpt feature_model_224.pt --whiten --w1 d
 ## 10. Limitations & open questions
 
 - **Single dataset / easy protocol.** Numbers are on SOCOFing **Altered-Easy** (synthetic alterations);
-  cross-sensor / cross-session (e.g. PolyU) would be harder — a fair-evaluation TODO.
+  cross-sensor / cross-session capture would be harder — a fair-evaluation TODO.
 - **Information ceiling.** ~1.5 pp binary-vs-float gap is irreducible at 16-D; widening the embedding
   (Tier-3) trades storage for a small gain, with diminishing returns past ~64–128-D.
 - **Real-crypto validation.** Correctness is verified via the faithful flash-psi Python port + the exact

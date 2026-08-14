@@ -1,0 +1,95 @@
+\section{Introduction}
+\label{sec:intro}
+
+In 2015 the United States Office of Personnel Management disclosed that attackers had
+exfiltrated the records of 21.5 million people, including 5.6 million
+fingerprints~\cite{Gootman16}. The passwords in that breach were reset within days. The
+fingerprints could not be: a compromised biometric is compromised permanently. This
+asymmetry is why ISO/IEC 24745~\cite{ISO24745} requires three properties of any stored
+biometric reference --- \emph{irreversibility}, so the reference cannot be inverted to the
+biometric; \emph{unlinkability}, so references for the same subject in different databases
+cannot be correlated; and \emph{renewability}, so a compromised reference can be replaced
+by a fresh one derived from the same trait.
+
+Systems that keep templates encrypted end-to-end address the first requirement directly.
+Blind-Touch~\cite{ChoiWooKim24} is the current reference point: it evaluates the matching
+step under CKKS~\cite{CKKS17} so that the server never sees a plaintext template. The
+guarantee is strong, and the costs are structural rather than incidental. A 117\,MB Galois
+rotation key must be distributed to every client; each query ciphertext is 856\,KB; and
+because the scheme packs 512 users into one ciphertext, the database is organised around a
+slot-packing ceiling rather than around the workload.
+
+Fuzzy private set intersection offers a different trade. Fuzzy-labelled PSI
+(FLPSI)~\cite{BuiCong25} lets a client learn the label attached to any server record
+within Hamming distance $\tau$ of its query, at communication linear in the database and
+with no key material of consequence. But FLPSI matches \emph{bit-strings}, and a
+fingerprint is not a bit-string. Bridging that gap --- turning a noisy image into a short
+binary code whose Hamming distance tracks biometric similarity --- is the missing piece.
+
+\paragraph{This paper.} We build the bridge and measure what it costs. A Siamese CNN runs
+\emph{on the client, in plaintext}, producing a 16-dimensional embedding; a fixed, public,
+training-free Super-Bit projection~\cite{JiEtAl12} binarises it to a 128-bit code; FLPSI
+matches the code and returns a label. The design removes the homomorphic layer entirely:
+server-side templates are 16 bytes, there is no rotation key, and there is no packing
+ceiling.
+
+That is the easy half, and on its own it would be an engineering note. The substance of this
+paper is what we found on measuring the composition against the error model its cryptographic
+half assumes.
+
+FLPSI's parameters are chosen from a model in which impostor codes are uniform, so the Hamming
+distance between unrelated records is $\mathrm{Binomial}(128,\tfrac12)$ with standard deviation
+$5.66$. Codes from our bridge --- and, we argue, from any LSH bridge over a learned embedding ---
+are not uniform: they are 128 projections of a 16-dimensional vector, so they carry roughly 16
+degrees of freedom and inherit the embedding's angular distribution, including the fact that some
+fingers genuinely look alike. Over $2.88\times10^{6}$ held-out impostor pairs, the mean impostor distance is $64.0$ --- \emph{exactly} what the model
+predicts, because the quantiser balances each bit. The standard deviation is $20.22$,
+$3.6\times$ the assumed value. A first-moment sanity check on the codes passes cleanly
+while the analysis underlying the parameter choice is wrong by three orders of magnitude:
+at the published operating point the per-record false-accept rate is
+$4.58\times10^{-2}$ rather than the predicted $2.95\times10^{-5}$.
+
+Nor is this a tuning problem. We sweep 6{,}848 parameter combinations and find none that
+reaches even a $10^{-2}$ query-level false-accept rate at $N = 5{,}000$ without rejecting
+most legitimate users. The reason is a floor: 8 of our $2.88\times10^{6}$ impostor pairs
+produce \emph{identical} 128-bit codes, a rate of $2.8\times10^{-6}$ that no choice of
+sub-sampling parameters can go below, since a zero-distance pair is accepted by every
+parameterisation. This bound is a property of the code, not of the protocol.
+
+\paragraph{Contributions.}
+\begin{description}\itemsep2pt
+\item[C1.] A design that decouples perceptual feature extraction (client-side, plaintext)
+from private matching (FLPSI), removing the homomorphic-encryption layer, its 117\,MB
+rotation key and its slot-packing ceiling, and returning the matched identity rather than
+a similarity score (\S\ref{sec:design}).
+
+\item[C2.] A public, training-free quantisation bridge whose interface contract with a
+fuzzy-PSI matcher is stated \emph{and measured}: bit balance, inter-bit dependence, and
+the empirical sub-sample collision probability against its hypergeometric prediction. We
+show the bridge costs $+1.55$ percentage points of EER and that the 16-dimensional
+embedding, not the code length, is the accuracy ceiling (\S\ref{sec:design},
+\S\ref{sec:eval}).
+
+\item[C3.] A parameter-selection analysis for threshold-PSI biometric matching computed
+from the \emph{measured} code distribution rather than a uniform idealisation: the
+$1{,}550\times$ false-accept gap, the irreducible collision floor, the measured
+$(w,\theta,N)$ frontier, and multi-finger fusion as the only mechanism that crosses the
+floor (\S\ref{sec:params}).
+
+\item[C4.] A semi-honest security analysis with an explicit ideal functionality, a formal
+leakage function, simulators for both corruptions and a hybrid sequence, together with an
+assessment of the stored template against ISO/IEC 24745 --- including two attacks we do
+not mitigate and the cost of the mitigations we propose (\S\ref{sec:security}).
+
+\item[C5.] A prototype and its measurements: accuracy with identity-level bootstrap
+confidence intervals and DET curves across three degradation levels, a bit-budget-matched
+comparison against ITQ, communication and latency at the corrected operating point, and a
+two-shard scaling experiment (\S\ref{sec:eval}).
+\end{description}
+
+\paragraph{What we do not claim.} We do not claim the measured error rates are acceptable
+for $1{:}N$ identification at the database sizes we tested; \S\ref{sec:params} shows they
+are not. We do not claim at-rest confidentiality against a compromised server. We do not
+claim security against malicious adversaries. We report a composition that is attractive
+on storage, key material and scaling structure, and that fails on error rates and template
+protection, and we quantify both halves.

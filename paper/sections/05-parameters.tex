@@ -1,0 +1,219 @@
+% =============================================================================
+%  Parameter selection and error analysis.
+%  SHARED: \input by both paper.tex (as Section 5) and technical-report.tex,
+%  so the two documents cannot report different numbers.
+% =============================================================================
+\section{Parameter Selection and Error Analysis}
+\label{sec:params}
+
+The FLPSI layer is parameterised by the code length $d$, the number of sub-samples $T$, the
+sub-sample width $w$, and the acceptance threshold $\theta$. This section derives the error
+rates those parameters induce, and shows that the published choice
+$(d,T,w,\theta) = (128, 64, 14, 2)$ is wrong by three orders of magnitude on real codes --- not
+because the arithmetic is wrong, but because the distribution it assumes is.
+
+\subsection{The accept model}
+
+A sub-sample selects $w$ of the $d$ positions uniformly at random and collides when the two
+codes agree on all of them. Writing $H = \|\xt \oplus \yt_i\|_1$ for the Hamming distance, the
+per-sub-sample collision probability and the acceptance probability are
+\begin{equation}
+\label{eq:accept}
+q(H) \;=\; \frac{\binom{d-H}{w}}{\binom{d}{w}},
+\qquad
+\Pr[\text{accept} \mid H] \;=\; \Pr\bigl[\mathrm{Binomial}(T, q(H)) \ge \theta\bigr].
+\end{equation}
+Acceptance depends on the pair \emph{only through $H$} --- not on which positions differ ---
+because the mask is a uniformly random set. Consequently the false-accept and false-reject
+rates are exact functionals of the two Hamming histograms,
+\begin{equation}
+\label{eq:rates}
+\mathrm{FAR} = \sum_{H} P_{\mathrm{imp}}(H)\,\Pr[\text{accept}\mid H],
+\qquad
+\mathrm{FRR} = 1 - \sum_{H} P_{\mathrm{gen}}(H)\,\Pr[\text{accept}\mid H],
+\end{equation}
+with no Monte-Carlo error. Every number below is computed from~\eqref{eq:rates} over 1,200
+held-out identities: 1,200 genuine and 2,877,600 impostor pairs.
+
+\paragraph{Validating the model before using it.}
+Equation~\eqref{eq:accept} assumes the $d$ positions are exchangeable, and Super-Bit's advantage
+comes precisely from making bits \emph{dependent}, so this needs testing. Measuring $\hat q(H)$
+on real code pairs (200 sub-sample draws per pair, $w=14$) gives $\hat q(H)/q(H)$ with
+\textbf{median $1.002$, range $[0.919, 1.099]$} over $H \in [5,40]$. Bit dependence is real ---
+mean inter-bit $|\rho| = 0.254$, and the correlation matrix has participation ratio $9.84$, so
+the 128 bits behave like about ten independent decisions --- but it manifests in the distribution
+\emph{of} $H$, not in $\Pr[\text{accept}\mid H]$. That isolates the defect to one place and
+licenses~\eqref{eq:rates}.
+
+\subsection{The codes are balanced but not uniform}
+
+The parameters were selected under a model in which impostor codes are uniform, giving
+$H \sim \mathrm{Binomial}(128, \tfrac12)$ with $\sigma = 5.66$. Table~\ref{tab:dist} compares
+that model against measurement.
+
+\begin{table}[htbp]
+\centering
+\caption{Impostor Hamming distribution: assumed versus measured over 2,877,600 held-out pairs.
+The mean is exactly as predicted; nothing else is.}
+\label{tab:dist}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+& uniform model & measured \\
+\midrule
+mean $H$              & 64.0 & \textbf{64.0} \\
+standard deviation    & 5.66 & \textbf{20.22} \\
+minimum observed $H$  & --- (never below $\approx$40) & \textbf{0} \\
+\midrule
+genuine mean $H$ & --- & 8.3 (sd 5.67, max 34) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The mean is \emph{exactly} right, because the quantiser's median-thresholding step balances
+every bit (measured balance $\in [0.466, 0.540]$). \textbf{No first-moment check can detect this
+failure}: a sanity test verifying that impostor codes ``look like coin flips on average'' passes
+cleanly. The discrepancy is entirely in the second moment and the tail, where $\sigma$ is
+$3.6\times$ larger than assumed.
+
+The cause is structural rather than a defect of this particular bridge. A 128-bit Super-Bit code
+is 128 projections of a 16-dimensional embedding, so it carries roughly 16 real degrees of
+freedom. The bridge is \emph{faithful} --- $\mathbb{E}[H]/d = \arccos(\text{cos-sim})/\pi$ holds
+--- and that faithfulness is the problem: it transmits the embedding's angular distribution
+intact, including the fact that some fingers genuinely resemble one another. We expect any LSH
+bridge over a learned low-dimensional embedding to behave the same way.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.82\linewidth]{hamming-histograms.pdf}
+\caption{Measured genuine and impostor Hamming distributions against the uniform model
+(dashed). Left: linear scale, where the impostor mean sits exactly at $d/2$. Right: log scale,
+where the left tail --- the part that sets the false-accept rate --- is several orders of
+magnitude heavier than assumed.}
+\label{fig:hist}
+\end{figure}
+
+\subsection{The consequence for the published operating point}
+
+At $(w,\theta) = (14,2)$ with error-free sub-samples, evaluating~\eqref{eq:rates} against the
+uniform model reproduces the published per-record false-accept rate of $2.954\times10^{-5}$
+exactly, and $q(8) = \binom{120}{14}/\binom{128}{14} = 0.38493266$ matches the published
+constant to all quoted digits. The arithmetic is sound. Against the \emph{measured}
+distribution the same expressions give
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+& uniform model & measured & ratio \\
+\midrule
+per-record FAR & $2.954\times10^{-5}$ & $\mathbf{4.578\times10^{-2}}$ & $\mathbf{1{,}550\times}$ \\
+FRR & --- & $9.61\times10^{-3}$ & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A per-record rate is not a security boundary. A $1{:}N$ identification query is tested against
+every enrolled record, so what an attacker faces is
+$\mathrm{FAR}_{\text{query}} = 1-(1-\mathrm{FAR})^{N}$ (Figure~\ref{fig:farn}):
+
+\begin{center}\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+$N$ & 1 & 10 & 100 & 1{,}000 & 5{,}000 & $10^{4}$ \\
+\midrule
+$\mathrm{FAR}_{\text{query}}$, published point & 0.046 & 0.374 & \textbf{0.991} & 1.000 & 1.000 & 1.000 \\
+$\mathrm{FAR}_{\text{query}}$, collision floor & --- & --- & 0.0003 & 0.0028 & \textbf{0.0138} & 0.0274 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+FRR is $0.96\%$ throughout. \textbf{The published parameters describe a verification $(1{:}1)$
+system, not an identification system}: at $N=1$ a $4.6\%$ false-accept rate is poor but coherent,
+and by $N=100$ the query-level rate already exceeds $50\%$. The second row is the irreducible
+floor derived in \S\ref{sec:floor}, which no parameter choice can go below.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.52\linewidth]{far-vs-dbsize.pdf}
+\caption{Query-level false-accept rate against database size. The published single-finger point
+crosses $50\%$ at $N \approx 100$. Multi-finger fusion moves the curve by orders of magnitude;
+retuning does not.}
+\label{fig:farn}
+\end{figure}
+
+\subsection{Retuning does not repair it}
+
+We swept 6,848 combinations of $w \in \{8,\dots,64\}$, $t \in \{0,\dots,8\}$ and
+$\theta \in \{1,\dots,64\}$, keeping only points whose FAR estimate is supported by the
+histogram (less than half the FAR mass drawn from bins holding fewer than ten observed pairs).
+Taking the lowest-FRR point that meets each query-level target at $N = 5{,}000$:
+
+only one target is reachable at all. A query-level rate of $10^{-1}$ is met by
+$(w,t,\theta) = (56,1,40)$ --- at an FRR of \textbf{84.8\%} --- and $10^{-2}$, $10^{-3}$ and
+$10^{-4}$ are unreachable by any point in the sweep with usable histogram support. The only
+setting that reaches even a $10\%$ query FAR rejects $85\%$ of legitimate users. The
+suggestion that $\theta$ should grow as $\Theta(\log N)$ to hold the query-level rate constant
+is directionally right and quantitatively insufficient, for the reason we give next.
+
+\subsection{An irreducible collision floor}
+\label{sec:floor}
+
+\textbf{8 of the 2,877,600 impostor pairs have Hamming distance exactly zero} --- distinct
+fingers producing \emph{identical} 128-bit codes. The collision rate is
+\begin{equation}
+p_0 = 2.78\times10^{-6}, \qquad \text{exact Poisson 95\% CI } [1.20\times10^{-6},\, 5.48\times10^{-6}].
+\end{equation}
+Since $q(0) = 1$, every sub-sample collides and $\Pr[\text{accept}\mid H{=}0] = 1$ for
+\emph{every} $(w, t, \theta)$. Therefore $p_0$ is a \textbf{hard lower bound on the per-record
+false-accept rate of any FLPSI parameterisation over these codes}, and it propagates to the query
+level as tabulated above. This is precisely why the ladder above becomes unreachable below $10^{-2}$: at $N = 5{,}000$ the
+floor alone is $1.4\%$, independent of $\theta$. The near tail is dense as well --- $1.03\times
+10^{-3}$ of impostor pairs lie at $H \le 10$, and $2.80\times10^{-2}$ at $H \le 25$, which is the
+99th percentile of the \emph{genuine} distribution. The two distributions genuinely overlap; the
+protocol is being asked to separate things that are not separable.
+
+\textbf{The bound is a property of the code, not of the protocol.} It moves only by producing
+better codes, and it is cheap for any future system to report: count $H = 0$ pairs on a held-out
+set. We recommend it as a standard diagnostic for fuzzy-PSI-over-learned-codes constructions.
+
+\subsection{Multi-finger fusion is the lever that works}
+
+Each finger is a separate enrolment, so $k$-of-$K$ fusion multiplies evidence instead of trading
+FAR against FRR along one curve --- and it is the only mechanism here that can beat the
+single-finger floor, since $k$ fingers must collide simultaneously. We measure it over 201
+held-out subjects contributing at least three fingers each, computing a Poisson-binomial over
+the real per-finger accept probabilities, so any correlation between one person's own fingers is
+carried by the data rather than assumed away.
+
+\begin{table}[htbp]
+\centering
+\caption{Measured $k$-of-$K$ fusion at $N = 5{,}000$, over 201 held-out subjects.}
+\label{tab:fusion}
+\small
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+parameters & rule & per-record FAR & $\mathrm{FAR}_{\text{query}}$ & FRR \\
+\midrule
+$w{=}14$, $\theta{=}2$ & 1-of-3 & $1.31\times10^{-1}$ & 1.000 & 0.000 \\
+$w{=}14$, $\theta{=}2$ & 2-of-3 & $8.73\times10^{-3}$ & 1.000 & 0.001 \\
+$w{=}14$, $\theta{=}2$ & 3-of-3 & $3.19\times10^{-4}$ & 0.797 & 0.026 \\
+$w{=}24$, $\theta{=}2$ & 1-of-3 & $1.95\times10^{-2}$ & 1.000 & 0.002 \\
+$w{=}24$, $\theta{=}2$ & 2-of-3 & $2.45\times10^{-4}$ & 0.707 & 0.033 \\
+\textbf{$w{=}24$, $\theta{=}2$} & \textbf{3-of-3} & $\mathbf{1.30\times10^{-6}}$ &
+  \textbf{0.0065} & \textbf{0.281} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fusion buys four orders of magnitude on the per-record rate, far more than any single-finger
+retuning achieves. It is still not sufficient on its own: the best measured configuration costs
+a $28\%$ false-reject rate. The honest summary is that \textbf{at $N = 5{,}000$ with a
+16-dimensional embedding, no configuration of this protocol is simultaneously secure and
+usable}.
+
+\paragraph{What this means for parameter selection.} Report FLPSI biometric parameters as a
+verification operating point unless the query-level rate at the target $N$ is stated; fit them to
+the \emph{measured} code distribution, since the uniform assumption errs by $1{,}550\times$ here
+and fails silently; and publish the collision floor of \S\ref{sec:floor}, which bounds every
+parameter choice and costs one pass over a held-out set. The remedy is more evidence, not a
+different threshold, and the binding constraint is the embedding dimension --- sixteen dimensions
+cannot separate 5,000 identities at cryptographic error rates.

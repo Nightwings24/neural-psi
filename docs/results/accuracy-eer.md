@@ -54,3 +54,8 @@ The eval scripts auto-use the GPU if `torch.cuda.is_available()`, else CPU (back
   highest end-to-end robustness lever, and now on a 1.88%-EER base.
 - The 16-D → 128-bit gap (1.55 pp) is the only remaining binary-vs-float loss; closing it would need a
   wider embedding (Tier-3), with diminishing returns.
+
+> **Confidence interval.** Identity-level bootstrap over all 1,200 x 1,199 held-out pairs
+> gives **95% CI [1.56, 2.20]** for the Super-Bit 128-bit EER (`12_code_analysis.py`).
+> That estimator's point value is 1.89% against the 1.88% below; the two differ by
+> 0.01 pp, well inside the interval. Quote 1.88% with [1.56, 2.20].

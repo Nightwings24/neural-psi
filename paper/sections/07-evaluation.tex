@@ -1,0 +1,118 @@
+\section{Implementation and Evaluation}
+\label{sec:eval}
+
+\paragraph{Setup.} The extractor is trained on SOCOFing~\cite{Shehu18} (6,000 fingerprints, 600
+subjects $\times$ 10 fingers) at $224\times224$, with an identity-disjoint split: 4,800 training
+images and 1,200 held-out identities that appear in no training or calibration step. Enrolment
+uses the \texttt{Real} captures and probes use the \texttt{Altered-*} sets. Confidence intervals
+throughout are 95\% bootstrap over \emph{identities}, not pairs --- pairs sharing a finger are
+not independent, and resampling pairs understates the interval. Hardware: RTX 4050 (6\,GB); the
+FLPSI layer runs against a reference implementation of~\cite{BuiCong25} instrumented to count
+protocol bytes.
+
+\subsection{Accuracy}
+
+\begin{table}[htbp]
+\centering
+\caption{EER with 95\% identity-level bootstrap intervals, at a matched bit budget. Collisions
+count impostor pairs at $H = 0$ out of ${\approx}1.44$M.}
+\label{tab:acc}
+\small
+\begin{tabular}{@{}lcccr@{}}
+\toprule
+Coder & Altered-Easy & Altered-Medium & Altered-Hard & $H{=}0$ \\
+\midrule
+Float embedding (ceiling) & 0.33\% & --- & --- & --- \\
+\textbf{Super-Bit 128} & \textbf{1.88\%} [1.56, 2.20] & 4.48\% [3.90, 4.94] &
+  7.04\% [6.31, 7.45] & \textbf{2} \\
+ITQ 128 & 4.55\% [3.91, 5.31] & 7.11\% [6.39, 7.73] & 9.06\% [8.47, 9.75] & 517 \\
+ITQ 16 & 6.13\% [5.54, 6.80] & 8.49\% [7.84, 9.19] & 11.58\% [10.56, 12.20] & 6{,}394 \\
+Naive sign 16 & 10.12\% & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Binarisation costs $+1.55$ percentage points of EER against the $0.33\%$ floating-point ceiling
+(Table~\ref{tab:acc}). Two comparisons matter more than the headline.
+
+First, \textbf{the bit budget}. Comparing a 128-bit Super-Bit code against a 16-bit ITQ code
+would be a mismatch, so ITQ is fitted at 128 bits as well. Super-Bit still wins by more than
+$2\times$ ($1.88\%$ vs $4.55\%$), so its advantage comes from block orthonormalisation rather
+than from a larger budget. It also wins by $250\times$ on code collisions, which
+\S\ref{sec:floor} shows is the metric that ultimately binds.
+
+Second, \textbf{degradation}. All three coders degrade gracefully and monotonically across the
+three alteration levels, with Super-Bit's ordering preserved throughout.
+
+We note against Blind-Touch's reported $0.7\%$ EER that our interval $[1.56, 2.20]$ does not
+contain it; the comparison is also across different training regimes and should be read as
+indicative rather than a controlled contrast.
+
+\paragraph{Whitening ablation.} Rescaling embedding dimensions by the head's final-layer weights
+before projection helps an under-trained model but \emph{hurts} the well-trained one
+($1.88\% \to 2.98\%$), because a well-conditioned embedding gains nothing from reweighting and
+loses from the added variance. The recommended configuration omits it.
+
+\paragraph{Code-length ablation.} At 64/128/256 bits the EER is $2.38\%$ / $1.88\%$ / $1.89\%$
+with storage 8/16/32\,B per user. Accuracy saturates at 128 bits: this is the 16-dimensional
+information ceiling, not a coding limitation, and it is the same ceiling that produces the
+distributional problem of \S\ref{sec:params}.
+
+\subsection{Operating point}
+
+The accuracy figures above describe the \emph{representation}. The deployed decision rule is the
+FLPSI accept model, and \S\ref{sec:params} shows that at the published parameters its per-record
+false-accept rate is $4.578\times10^{-2}$ --- $1{,}550\times$ the value predicted under the
+uniform-code model --- with a query-level rate that exceeds $50\%$ by $N = 100$. We do not repeat
+that analysis here; we note only that \textbf{an EER measured on the code is not the error rate
+of the deployed system}, and that the two must be reported together.
+
+\subsection{Communication}
+
+Online per-query communication is linear in the database,
+$\text{comm} \approx 0.25\,\mathrm{MB} + 1.54\,\mathrm{KB}\cdot N$, measured on the query channel
+in both directions with garbled-circuit transfer excluded as one-time, data-independent
+preprocessing.
+
+\begin{center}\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+$N$ & 500 & 1{,}000 & 5{,}000 & 10{,}000 & 50{,}000 & $10^{6}$ (extrap.) \\
+\midrule
+online comm & 1.00\,MB & 1.76\,MB & 7.77\,MB & 15.28\,MB & 75.40\,MB & ${\sim}1.5$\,GB \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The extrapolation matches Bui and Cong's reported 153\,MB at $10^{5}$ and 1{,}533\,MB at $10^{6}$,
+confirming that the composition inherits the FLPSI communication profile unchanged --- the
+quantiser adds nothing, it only fixes the 128-bit width.
+
+\textbf{This is where the design loses.} Blind-Touch sends ${\sim}1.1$\,MB per query at constant
+cost below 8,192 users; we exceed that beyond ${\sim}500$ records. Communication is not a
+selling point of this work and we do not present it as one. The protocol runs in a constant
+number of rounds over a field with $|\mathbb{F}| \ge 2^{\kappa + \log N}$, which for
+$N = 5\times10^{4}$ and $\kappa = 40$ means a 56-bit field.
+
+\subsection{Latency and storage}
+
+\begin{center}\small
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+phase & $N = 1{,}000$ & $N = 5{,}000$ & scaling \\
+\midrule
+CNN forward (client, GPU) & 0.80\,ms & 0.80\,ms & $O(1)$ \\
+Quantise (client) & 0.002\,ms & 0.002\,ms & $O(1)$ \\
+FLPSI online & 187\,ms & 823\,ms & ${\sim}0.16$\,ms/record \\
+\midrule
+total query-time & ${\sim}188$\,ms & ${\sim}824$\,ms & \\
+FLPSI offline (preprocessing) & 553\,ms & 1{,}946\,ms & ${\sim}0.38$\,ms/record \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The quantiser costs one $128\times16$ matrix multiply and a threshold compare --- $2.2\,\mu$s,
+negligible against everything else. Server-side storage is \textbf{16\,B per user} against
+Blind-Touch's 1.67\,KB, a $107\times$ reduction, with \textbf{no 117\,MB Galois key} and no
+slot-packing ceiling. Storage and key material are where this design wins, and the win is
+structural rather than a constant factor.

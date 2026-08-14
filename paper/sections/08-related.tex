@@ -1,0 +1,56 @@
+\section{Related Work}
+\label{sec:related}
+
+\begin{table}[htbp]
+\centering
+\caption{Privacy-preserving biometric matching, with reported figures. ``Key'' is per-client key
+material; ``template'' is server-side storage per enrolled user.}
+\label{tab:related}
+\small
+\begin{tabular}{@{}lllll@{}}
+\toprule
+System & Mechanism & Key & Template & Reported cost \\
+\midrule
+Blind-Touch~\cite{ChoiWooKim24} & CKKS & 117\,MB & 1.67\,KB & 856\,KB/query, 650\,ms \\
+Blind-Match~\cite{BlindMatch24} & CKKS, batched & large & --- & sub-second at $10^{4}$ \\
+Uzun et al.~\cite{UzunEtAl21} & fuzzy PSI & --- & --- & 12.1\,MB @ $10^{4}$ \\
+Bui--Cong~\cite{BuiCong25} & FLPSI & PRF key & $d/8$\,B & 153\,MB @ $10^{5}$ \\
+Chakraborti et al.~\cite{ChakrabortiEtAl23} & fuzzy PSI & --- & --- & distance-aware \\
+van Baarsen--Pu~\cite{vanBaarsenPu25} & structured fuzzy PSI & --- & --- & low-dim.\ metrics \\
+\midrule
+\textbf{This work} & CNN + LSH + FLPSI & PRF key & \textbf{16\,B} & 7.77\,MB @ $5\times10^{3}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Homomorphic biometric matching.} Blind-Touch~\cite{ChoiWooKim24} is our baseline and
+the source of the extractor architecture; Blind-Match~\cite{BlindMatch24} improves throughput with
+better batching. Both keep templates encrypted end-to-end --- a stronger at-rest guarantee than we
+provide (\S\ref{sec:atrest}) --- and both pay large key material and a packing-driven layout.
+Earlier work~\cite{KimOhKim20,YangEtAl20} established the Siamese-under-HE pattern.
+
+\paragraph{Fuzzy PSI.} Uzun et al.~\cite{UzunEtAl21} gave the first practical fuzzy PSI for
+biometric identification. Bui and Cong~\cite{BuiCong25} introduced the fuzzy-\emph{labelled}
+variant we build on, achieving linear communication with no packing ceiling; the construction,
+its correctness argument and its security proof are theirs.
+Others~\cite{ChakrabortiEtAl23,GaoEtAl24,vanBaarsenPu25,GarimellaEtAl23} extend fuzzy and
+structure-aware PSI to other metrics and adversary models. What none of this line addresses is
+where the binary strings come from --- the assumption throughout is that inputs are already
+bit-strings under Hamming distance. Our contribution is to supply that input from a learned
+extractor and then to measure what the assumption costs when the strings are not uniform
+(\S\ref{sec:params}).
+
+\paragraph{Template protection.} Cancelable biometrics~\cite{RathaEtAl01},
+BioHashing~\cite{TeohEtAl04}, index-of-max hashing~\cite{JinEtAl18}, fuzzy
+vaults~\cite{JuelsSudan02} and fuzzy extractors~\cite{DodisEtAl04,JuelsWattenberg99} all target
+exactly the ISO/IEC 24745 properties our stored code fails. They typically pay accuracy for
+those properties, and known attacks~\cite{GhammamEtAl20,DongJinTeoh19} limit some constructions.
+We do not adopt them here, but \S\ref{sec:atrest} shows a per-enrolment XOR mask recovers
+unlinkability and renewability at zero accuracy cost, because XOR preserves Hamming distance
+exactly --- and is honest that this does not deliver irreversibility.
+
+\paragraph{Deep hashing.} SimHash~\cite{Charikar02}, Super-Bit~\cite{JiEtAl12} and
+ITQ~\cite{GongLazebnik11} are the standard bridges from real vectors to binary codes;
+DeepPrint~\cite{EngelsmaCaoJain19} learns fixed-length fingerprint representations directly.
+Our bridge is deliberately training-free and public so that it composes with a protocol whose
+security must not depend on it.

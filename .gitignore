@@ -49,3 +49,8 @@ logs/
 *.swp
 .vscode/
 .idea/
+
+# ---- LaTeX build products (the submission/ PDFs are committed deliberately) ----
+paper/*.pdf
+paper/*.bbl
+paper/*.blg

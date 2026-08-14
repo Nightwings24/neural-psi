@@ -1,0 +1,29 @@
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Identification at scale does not work.} At the measured code distribution there is no
+parameter setting that is simultaneously secure and usable at $N = 5{,}000$
+(\S\ref{sec:params}). The design is coherent as a verification $(1{:}1)$ system and as a
+small-$N$ identification system, and we do not claim more.
+
+\paragraph{The embedding is the ceiling.} Every headline number here would move with a
+higher-dimensional or better-trained extractor, and none would move with a better coder or a
+different threshold.
+
+\paragraph{Templates at rest.} The stored code is a bearer credential and fails all three
+ISO/IEC 24745 requirements (\S\ref{sec:atrest}). Our mitigations recover unlinkability and
+renewability but not irreversibility. This posture is \emph{weaker} than the encrypted-template
+baseline's, and we treat full at-rest confidentiality against a compromised server as out of
+scope rather than solved.
+
+\paragraph{Semi-honest only.} A malicious client can deviate arbitrarily, and since it supplies
+$\xt$ with no binding to a live finger, sensor attestation is load-bearing rather than a detail.
+
+\paragraph{Evaluation scope.} All results are on a single corpus whose probes are synthetic
+degradations --- obliteration, rotation, z-cut --- of the \emph{same} capture. That measures
+robustness to noise, not generalisation across capture conditions, sensors or sessions, which
+remains untested here and is the first thing further work should establish.
+
+\paragraph{Communication.} Per-query communication exceeds the homomorphic baseline's beyond a
+few hundred records and grows linearly; the design trades communication for storage and key
+material.

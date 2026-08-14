@@ -1,0 +1,122 @@
+\section{System Design}
+\label{sec:design}
+
+\subsection{Architecture}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.78\linewidth]{neuralpsi-architecture.png}
+\caption{The three stages. The CNN and quantiser run on the client in plaintext; only the
+protocol messages leave the device. The server stores 16-byte codes and labels, with no key
+material beyond a PRF key and no homomorphic layer.}
+\label{fig:arch}
+\end{figure}
+
+NeuralPSI has three stages (Figure~\ref{fig:arch}). A Siamese CNN maps a capture to
+$\mathbf{e} \in \mathbb{R}^{16}$; a public, training-free quantiser maps $\mathbf{e}$ to
+$\xt \in \{0,1\}^{128}$; and FLPSI matches $\xt$ against the enrolled codes and returns the label
+of any match. Stages one and two run entirely on the client. The server's entire per-user state
+is a 16-byte code and a label.
+
+The consequences of removing the homomorphic layer are immediate: server-side templates drop from
+1.67\,KB to 16\,B, the 117\,MB Galois key disappears, and matching cost is linear in $N$ with no
+slot-packing ceiling. What the composition costs is the subject of \S\ref{sec:params}.
+
+\subsection{The quantisation bridge}
+\label{sec:quantiser}
+
+Replacing homomorphic matching with FLPSI creates a representation mismatch that nothing
+downstream can paper over. The extractor emits a 16-dimensional real embedding whose natural
+similarity is cosine; FLPSI matches fixed-length binary strings under Hamming distance with a
+sub-sampling threshold. The bridge between them must satisfy four constraints at once, and most
+off-the-shelf hashing schemes violate at least one:
+(i)~\emph{similarity preservation} --- Hamming distance must track identity;
+(ii)~\emph{fixed binary format} --- exactly $d = 128$ native Hamming bits;
+(iii)~\emph{an FLPSI-friendly error profile} --- because the matcher sub-samples bit positions,
+the bits must be balanced and the per-bit errors close enough to exchangeable that the
+protocol's error analysis holds; and
+(iv)~\emph{a public, cheap map} --- published alongside the model, costing one matrix multiply.
+
+Constraint~(iii) is usually asserted. We measure it in \S\ref{sec:params}, and the result is
+mixed: the bits are well balanced and the hypergeometric sub-sample model survives, but the bits
+are strongly dependent and the resulting Hamming distribution is not the one the analysis
+assumes.
+
+Our quantiser is a fixed, public, \emph{affine-then-sign} map with no learned non-linearity, in
+three stages. \textbf{(1)~Centre:} $\mathbf{e}_0 = \mathbf{e} - \boldsymbol{\mu}$, with
+$\boldsymbol{\mu}$ the population mean on a calibration split disjoint from all evaluation
+identities; L2-normalised features occupy a spherical cap rather than the full sphere, so
+thresholding at the origin would give badly unbalanced bits. \textbf{(2)~Super-Bit projection:}
+$\mathbf{z} = \mathbf{P}\mathbf{e}_0$ with $\mathbf{P} \in \mathbb{R}^{128 \times 16}$ built from
+8 stacked $16 \times 16$ Gaussian blocks, each orthonormalised within the block by
+Gram--Schmidt, all generated from one published seed. \textbf{(3)~Balanced sign:}
+$\tilde{x}_k = \mathbf{1}[z_k > \tau_k]$ with $\tau_k$ the per-bit median on the calibration
+split. At inference the three stages collapse to
+\begin{equation}
+\xt = \mathbf{1}\bigl[\mathbf{P}(\mathbf{e} - \boldsymbol{\mu}) > \boldsymbol{\tau}\bigr],
+\end{equation}
+and the public constants $(\mathbf{P}, \boldsymbol{\mu}, \boldsymbol{\tau})$ ship beside the
+model as batch-normalisation statistics would.
+
+Similarity is preserved by the random-hyperplane identity: for unit vectors at angle $\vartheta$,
+\begin{equation}
+\label{eq:lsh}
+\frac{\mathbb{E}\bigl[\mathrm{Hamming}(\xt_1, \xt_2)\bigr]}{d}
+ = \frac{\vartheta}{\pi}
+ = \frac{1}{\pi}\arccos\bigl(\langle \hat{\mathbf{e}}_1, \hat{\mathbf{e}}_2\rangle\bigr),
+\end{equation}
+mapping genuine pairs to small Hamming distance and impostor pairs to large --- exactly the
+quantity FLPSI thresholds. We use Super-Bit rather than plain SimHash because block
+orthonormalisation leaves~\eqref{eq:lsh} unbiased while strictly lowering its variance at the
+acute angles that separate genuine from impostor pairs, at the same 128 bits and no extra cost.
+
+An optional fourth stage --- rescaling dimensions by $\mathrm{diag}(\sqrt{|\mathbf{w}_1|})$, the
+head's final-layer weights, so Hamming distance tracks the learned accept metric rather than raw
+cosine --- helps an under-trained embedding and \emph{hurts} a well-trained one
+(\S\ref{sec:eval}). Our recommended configuration omits it.
+
+\paragraph{The map is not a privacy mechanism.}
+It is tempting to argue that publishing $\mathbf{P}$ is harmless because recovering $\mathbf{e}$
+from $\xt$ means inverting an underdetermined system. \emph{This reasoning is backwards and we
+flag it explicitly.} The map applies 128 sign measurements to a 16-dimensional vector --- an
+\emph{over}-determined, roughly $8\times$ oversampled system --- and one-bit compressed
+sensing~\cite{PlanVershynin13,JacquesEtAl13} recovers the \emph{direction} of $\mathbf{e}$ from
+public $\mathbf{P}$ and $\xt$ to within an angular error that shrinks with the oversampling
+ratio. \S\ref{sec:atrest} puts the number at $2.9$--$7.2^\circ$ against a genuine intra-class
+spread of $11.7^\circ$, so the recovered direction re-quantises inside the accept region.
+
+The sign map is therefore \emph{not} one-way and must not be relied on as one. Biometric privacy
+rests entirely on the protocol: the server is the mOPRF \emph{sender} and never sees $\xt$ or any
+plaintext sub-sample of it, so its view is simulatable from its own input (\S\ref{sec:security}).
+The bridge's responsibility is accuracy and format; secrecy is discharged by the protocol, and
+confidentiality \emph{at rest} is discharged by neither (\S\ref{sec:atrest}).
+
+\subsection{Registration}
+
+A user enrols by capturing a print, computing $\yt_u$ locally with the same public constants, and
+sending $(\yt_u, \ell_u)$ over an authenticated channel. Enrolment must be authenticated: an
+attacker able to enrol chosen codes can probe the code space directly (\S\ref{sec:attacks}). The
+label $\ell_u$ is a 256-bit secret, and the server additionally stores the verifier
+$V_u = \mathsf{H}(\ell_u)$ used by the credential step of \S\ref{sec:whoauth}.
+
+\subsection{Authentication}
+
+\begin{enumerate}\itemsep2pt
+\item The client captures a print and computes $\xt$ locally. The server sends a fresh nonce
+      $\nu$, folded into the first flow at no extra round.
+\item Client and server run the masked OPRF over the $T$ public masks; for each mask the client
+      learns a value determined by its own sub-sample and the server's key, and the server learns
+      nothing about $\xt$.
+\item For every record $i$ the server encodes Shamir shares of $\ell_i$ against the PRF images of
+      $\yt_i$'s sub-samples and delivers them through the vector ring-OLE encoding. This is one
+      batched pass, not $N$ independent instances --- all records share the client's receiver
+      polynomial, which makes the batching cheap and is what \S\ref{sec:hybrids} must account for.
+\item The client reconstructs $\ell_i$ for any record on which at least $\theta$ sub-samples
+      collided, and replies $\sigma = \mathsf{HMAC}_{\ell_i}(\nu \,\|\, \mathsf{sid})$.
+\item The server verifies $\sigma$ against its stored verifiers and grants the session.
+\end{enumerate}
+
+Steps 1--4 realise $\Fnpsi$; step 5 turns a private lookup into an authentication, which the
+functionality alone does not provide (\S\ref{sec:whoauth}). The nonce and session identifier are
+what stop $\sigma$ being replayable: $\ell$ is a long-lived per-user secret, so without them one
+intercepted transcript would be a permanent credential.

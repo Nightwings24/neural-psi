@@ -1,0 +1,305 @@
+% =============================================================================
+%  Security analysis.  Slots into the restructured paper as Section 6 (2.5 pp).
+%  The long-form hybrid sequence lives in sections/appendix-hybrids.tex.
+% =============================================================================
+\section{Security Analysis}
+\label{sec:security}
+
+We work in the semi-honest model with static corruptions. Throughout, $\lambda$ is the
+computational security parameter, $\kappa$ the statistical one, $\mathbb{F}$ a field with
+$|\mathbb{F}| \ge 2^{\kappa + \log N}$, and $\mathsf{negl}$ an unspecified negligible
+function. Section~\ref{sec:atrest} then steps outside that model, because the most
+serious weakness we identify is not a protocol weakness at all.
+
+\subsection{The functionality}
+\label{sec:functionality}
+
+Prior work in this line proves security for \emph{one} client set against \emph{one}
+labelled server set. NeuralPSI runs $N$ record instances sharing a receiver polynomial
+and a PRF key, so the composite object needs to be named before anything can be proved
+about it.
+
+\begin{figure}[htbp]
+\fbox{\parbox{0.97\linewidth}{
+\textbf{Functionality} $\mathcal{F}_{\mathsf{NeuralPSI}}^{d,T,w,\theta}$\\[2pt]
+\textbf{Parties.} A client $\mathsf{C}$ and a server $\mathsf{S}$.\\
+\textbf{Parameters.} Code length $d$, sub-sample count $T$, sub-sample width $w$,
+acceptance threshold $\theta$, and a public mask family
+$M = \{m_j\}_{j\in[T]}$, $m_j \in \{0,1\}^d$, $\|m_j\|_1 = w$.\\[3pt]
+\textbf{Inputs.} $\mathsf{C}$ inputs $\tilde{\mathbf{x}} \in \{0,1\}^d$.
+$\mathsf{S}$ inputs a database $D = \{(\tilde{\mathbf{y}}_i, \ell_i)\}_{i\in[N]}$ with
+$\tilde{\mathbf{y}}_i \in \{0,1\}^d$ and labels $\ell_i \in \mathbb{F}$.\\[3pt]
+\textbf{Computation.} For each $i \in [N]$ let
+\[
+S_i \;=\; \bigl\{\, j \in [T] \;:\; \tilde{\mathbf{x}} \wedge m_j
+   \;=\; \tilde{\mathbf{y}}_i \wedge m_j \,\bigr\},
+\qquad
+\mathsf{acc}(i) \;=\; \bigl[\,|S_i| \ge \theta\,\bigr].
+\]
+\textbf{Outputs.} $\mathsf{C}$ receives $\mathsf{out} =
+\{\,(i, \ell_i) : \mathsf{acc}(i)\,\}$; $\mathsf{S}$ receives $\bot$.
+}}
+\caption{The composite functionality. Note that the output is a \emph{set}: the scan runs
+over all $N$ records and more than one may satisfy the predicate. This differs from the
+single-match phrasing used in earlier drafts of this work, and the difference is
+observable --- $|\mathsf{out}| > 1$ occurs at a rate we measure in
+Section~\ref{sec:params}.}
+\label{fig:functionality}
+\end{figure}
+
+Two features of Figure~\ref{fig:functionality} deserve emphasis. First, acceptance is a
+deterministic function of $\tilde{\mathbf{x}}$, $\tilde{\mathbf{y}}_i$ and the public mask
+family, so it depends on the pair only through which positions differ; because the masks
+are drawn uniformly it depends in distribution only on the Hamming weight
+$H = \|\tilde{\mathbf{x}} \oplus \tilde{\mathbf{y}}_i\|_1$. Every error rate in
+Section~\ref{sec:params} follows from that observation. Second, the functionality says
+nothing about \emph{authentication}: no party other than $\mathsf{C}$ learns anything, so
+a relying party cannot act on the result. We return to this in
+Section~\ref{sec:whoauth}.
+
+\paragraph{The masks are public.} We fix this now because the leakage analysis depends on
+it. Taking $M$ public is the conservative reading: it gives the adversary strictly more
+than a server-private mask family would, and our claims hold under it. Making $M$
+server-private would shrink $\mathcal{L}_{\mathsf{C}}$ below, but the protocol as
+constructed delivers the collision pattern to the client, so a private $M$ would require a
+structural change rather than a parameter choice.
+
+\subsection{The leakage function}
+\label{sec:leakage}
+
+$\mathcal{F}_{\mathsf{NeuralPSI}}$ is what we would like to realise. What the protocol
+realises is $\mathcal{F}_{\mathsf{NeuralPSI}}$ \emph{augmented with leakage}:
+\begin{align}
+\mathcal{L}_{\mathsf{C}}(\tilde{\mathbf{x}}, D) &=
+  \Bigl(\;N,\;\; \bigl\{\,(i, S_i) \;:\; |S_i| \ge \theta \,\bigr\} \;\Bigr),
+  \label{eq:leakC}\\[2pt]
+\mathcal{L}_{\mathsf{S}}(\tilde{\mathbf{x}}, D) &= \bot .
+  \label{eq:leakS}
+\end{align}
+
+Equation~\eqref{eq:leakC} is strictly more than ``the identity of the matched record''.
+The client learns \emph{which} sub-samples collided, and since $M$ is public, each
+$j \in S_i$ pins $w$ known positions of $\tilde{\mathbf{y}}_i$ to known values. The client
+also learns $N$, the number of records tested. We quantify the consequences in
+Section~\ref{sec:attacks}; the short version is that $\mathcal{L}_{\mathsf{C}}$ is enough
+to reconstruct a matched record outright.
+
+\subsection{Security theorem}
+
+\begin{theorem}[Semi-honest security]
+\label{thm:main}
+Let $F$ be a PRF, and instantiate the sub-protocols with a masked OPRF
+$\Pi_{\mathsf{mOPRF}}$ and a vector ring-OLE $\Pi_{\mathsf{VROLE}}$, each semi-honest
+secure. Then the NeuralPSI protocol of Section~\ref{sec:design} securely realises
+$\mathcal{F}_{\mathsf{NeuralPSI}}^{d,T,w,\theta}$ with leakage
+$(\mathcal{L}_{\mathsf{C}}, \mathcal{L}_{\mathsf{S}})$ against a semi-honest adversary
+statically corrupting one party. Concretely, for every such adversary $\mathcal{A}$ there
+is a simulator whose output is distinguishable from $\mathcal{A}$'s view with advantage at
+most
+\begin{equation}
+\label{eq:bound}
+\varepsilon \;\le\;
+   \varepsilon_{\mathsf{mOPRF}}
+ + \varepsilon_{\mathsf{VROLE}}
+ + \varepsilon_{\mathsf{LPN}}
+ + \underbrace{\varepsilon_{F}\bigl(q + T\!\cdot\!2^{w}\bigr)}_{\text{PRF, extended domain}}
+ + \underbrace{\frac{N(2T+1)}{|\mathbb{F}|}}_{\text{statistical}} ,
+\end{equation}
+where $q$ is the adversary's own query count.
+\end{theorem}
+
+Two terms in~\eqref{eq:bound} are easy to omit and both matter. The PRF term is charged
+for $T \cdot 2^{w}$ extra oracle queries, not $q$ alone: each mask restricts the PRF input
+to a domain of size $2^{w} = 2^{14}$, so the full input table has only
+$T \cdot 2^{w} = 2^{20}$ entries and the reduction must budget for enumerating it. The
+statistical term is the price of the polynomial masking step (hybrid $\mathsf{H}_4$
+below) and is the reason $|\mathbb{F}|$ must be chosen with $N$ in view; we report the
+concrete field size in Section~\ref{sec:eval}.
+
+Both simulators are constructed in Appendix~\ref{app:hybrids}. The corrupt-client simulator
+takes $\xt$ and $(\mathsf{out}, \mathcal{L}_{\mathsf{C}})$ and produces the mOPRF outputs, the
+sender-side silent-VOLE transcript and the polynomials $\{\hat z_i\}$, sampling uniformly at every
+point not pinned by $\mathcal{L}_{\mathsf{C}}$. The corrupt-server simulator has only the
+transcript to produce, since the server outputs $\bot$; its one input-dependent message is
+$\Delta U = \Delta u(X)$. Worth stating precisely, because the natural argument is slightly wrong:
+$\Delta U$ is \emph{not} uniform on $\mathbb{F}^{2T+1}$ but lies in the $(T{+}1)$-dimensional image
+of the degree-$\le T$ evaluation map, so the simulator samples a uniform polynomial of degree
+$\le T$ and outputs its evaluation vector. Since $u'_0$ is uniform, $u_0 - u'_0$ is uniform
+\emph{in that subspace} and the indistinguishability is statistical, not computational.
+
+\subsection{Hybrids}
+\label{sec:hybrids}
+
+$\mathsf{H}_0$ is the real execution. $\mathsf{H}_1$ replaces $\Pi_{\mathsf{mOPRF}}$ by
+$\mathcal{F}_{\mathsf{mOPRF}}^{T}$ (semi-honest mOPRF security); $\mathsf{H}_2$ replaces $F_k$ by
+a random function (PRF security, charged at $q + T\cdot2^{w}$ queries as above); $\mathsf{H}_3$
+replaces $\Pi_{\mathsf{VROLE}}$ by $\mathcal{F}_{\mathsf{VROLE}}$ (base-VOLE security and LPN).
+
+$\mathsf{H}_4$ is the load-bearing \emph{statistical} step, and is the one most easily left
+unstated: for every non-colliding point $x_j$ it replaces
+$v_1(x_j) = f(x_j) + \bigl(\prod_i (x_j - \yt_i)\bigr)\cdot R(x_j)$ by a uniform element of
+$\mathbb{F}$. This holds because $R$ is uniform of degree $\le T$ and the evaluation map on any
+set of at most $T+1$ points is a bijection onto $\mathbb{F}^{T+1}$, so the masking terms are
+jointly uniform --- \emph{provided}
+\begin{equation}
+\label{eq:h4}
+\bigl|\{\, j \in [T] : j \notin S_i \,\}\bigr| \;\le\; \deg R + 1 \;=\; T+1,
+\end{equation}
+which holds unconditionally here since $|[T]| = T$, but is a design constraint rather than an
+accident. Over $N$ records and $2T+1$ points the union bound gives the $N(2T+1)/|\mathbb{F}|$
+term in~\eqref{eq:bound}. Finally $\mathsf{H}_5$ replaces $\ell'_i = F_k(\ell_i)$ by uniform
+elements (immediate from $\mathsf{H}_2$), and $\mathsf{H}_6 = \mathsf{Sim}_{\mathsf{C}}$ is
+identical by inspection.
+
+\paragraph{Why $N$ instances do not compose for free.}
+The step that a citation cannot discharge is the reuse across records. All $N$ record
+instances share one receiver polynomial $u_0$ --- that sharing is precisely what makes the
+vector ring-OLE batching asymmetric and cheap --- and one PRF key $k$, across all records
+\emph{and} all sessions. Hybrids $\mathsf{H}_2$ and $\mathsf{H}_4$ are therefore stated
+over the whole database rather than per record: $\mathsf{H}_2$ replaces the single shared
+$F_k$ once, which is why its cost appears once rather than $N$ times, and $\mathsf{H}_4$
+is applied simultaneously at all $N(2T+1)$ points with the union bound
+in~\eqref{eq:bound}. Constraint~\eqref{eq:h4} must hold for every record at once; it does,
+but only because $\deg R \ge T$, which is a design requirement rather than an accident and
+is easy to violate when tuning $T$ downward for communication.
+
+The long-form hybrids, with the distinguisher reductions written out, are in
+Appendix~\ref{app:hybrids}.
+
+\subsection{The stored template is a bearer credential}
+\label{sec:atrest}
+
+Theorem~\ref{thm:main} covers the protocol and says nothing about data at rest, which is where
+this design is weakest --- strictly weaker than the homomorphic baseline, whose stored feature
+vectors are encrypted under a key the server never holds.
+
+The server stores $(\yt_i, \ell_i)$ in the clear. An adversary who reads $\yt_i$ and submits it
+as a query obtains $H = 0$, hence $|S_i| = T$ and acceptance with probability $1$. \emph{No
+inversion is required}: the stored code \emph{is} a working credential, so a database breach is
+immediate and total impersonation of every enrolled user.
+
+Inversion is an additional problem. The quantiser is over-determined --- 128 hyperplanes cut
+$\mathbb{S}^{15}$ into $2\sum_{k<16}\binom{127}{k} \approx 2^{64.5}$ cells --- so it is not
+one-way in any useful sense. Its intrinsic angular resolution is
+$\text{cells}^{-1/15} \approx 2.9^\circ$, and the standard one-bit compressed-sensing heuristic
+$k/m = 16/128$ gives $7.2^\circ$, against a measured genuine intra-class spread of
+$\pi\cdot 8.3/128 = 11.7^\circ$. Reconstruction is thus $1.6$--$4\times$ \emph{tighter} than
+genuine variation: the recovered direction re-quantises inside the accept region and transfers
+to any system using the same extractor.
+
+\begin{table}[htbp]
+\centering
+\caption{The stored template against ISO/IEC 24745~\cite{ISO24745}. NeuralPSI as
+specified fails all three requirements.}
+\label{tab:iso24745}
+\small
+\begin{tabular}{@{}p{0.19\linewidth}p{0.10\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Requirement} & \textbf{Status} & \textbf{Why} \\
+\midrule
+Irreversibility & fails & Twice: direct replay of the stored code, and one-bit
+compressed-sensing recovery of the embedding direction to $2.9$--$7.2^\circ$. \\
+Unlinkability & fails & $(P, \mu, \tau)$ and the projection seed are public and fixed, so
+one finger yields the same 128-bit code in every deployment and codes are directly
+Hamming-comparable across databases. There is no diversification parameter. \\
+Renewability & fails & A second independent code cannot be issued from the same finger.
+This is the requirement the application most needs, since a compromised fingerprint
+cannot be reissued. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Mitigations, and what they actually buy.}
+\emph{(i) A client-side per-enrolment XOR mask}: the device holds $r_u \in \{0,1\}^{d}$ and the
+server stores $\yt \oplus r_u$. XOR preserves Hamming distance exactly, so \textbf{accuracy is
+unchanged} --- every number in \S\ref{sec:eval} carries over --- and 16 bytes of client state
+buys unlinkability and renewability. It does \emph{not} stop replay of a stolen record.
+\emph{(ii) Envelope encryption at rest}, key in an HSM, decrypting to memory for the scan:
+unglamorous, orthogonal to the protocol, sound in the semi-honest model, and what we would
+deploy. \emph{(iii)} We explicitly reject one tempting option --- storing the mOPRF images
+$\{F_k(\yt_i \wedge m_j)\}_j$ instead of the code. It is keyed and locality-preserving and the
+server computes those values anyway, but the per-mask domain is only $2^{w} = 2^{14}$, so anyone
+who can evaluate $F_k$ inverts each image by exhaustive search; repairing it needs a per-record
+salt that destroys the equality-preservation the protocol depends on.
+
+Applying (i) and (ii) yields unlinkability and renewability. \textbf{Full at-rest
+confidentiality against a compromised server remains out of scope}, and this posture is weaker
+than the encrypted-template baseline's --- a limitation we state rather than resolve.
+
+\subsection{Who is actually authenticated}
+\label{sec:whoauth}
+
+As specified, no relying party learns the outcome, so no session can be granted:
+$\mathcal{F}_{\mathsf{NeuralPSI}}$ is a private identification lookup, not an authentication
+protocol. The credential step of Section~\ref{sec:design} closes the gap for one MAC, one nonce
+and 32 bytes, with the nonce and session id making $\sigma$ non-replayable --- without them one
+intercepted transcript is a permanent credential, since $\ell$ is long-lived.
+
+That step has a consequence for how Section~\ref{sec:params} should be read. A client cannot
+forge $\sigma$ without $\ell_i$, so system security reduces to recovering \emph{some} $\ell_i$,
+which is exactly the false-accept question. In a conventional matcher a false accept is one bad
+login; here it hands the attacker a \textbf{permanent per-user credential}. \emph{The
+false-accept rate is a credential-compromise rate}, which is why we treat it as a security
+parameter rather than an accuracy metric.
+
+\subsection{Attacks}
+\label{sec:attacks}
+
+\paragraph{(a) Impersonation without search.}
+The parameters were chosen against an attacker submitting \emph{uniformly random} codes,
+for which the per-record accept probability is $q_{\mathsf{rand}} = 2.954\times10^{-5}$.
+But the cheapest attack is not to guess: it is to present one's own finger. Measured over
+$2.88\times10^{6}$ held-out impostor pairs, the per-record accept probability for a
+\emph{real but wrong} finger is $q_{\mathsf{bio}} = 4.578\times10^{-2}$ --- $1{,}550\times$
+larger. Expected queries to impersonate somebody, $1/(1-(1-q)^N)$:
+
+\begin{center}\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+$N$ & $512$ & $5{,}000$ & $10^{5}$ & $10^{6}$ \\
+\midrule
+random code ($q_{\mathsf{rand}}$) & $67$ & $7$ & $1.05$ & $1$ \\
+\textbf{zero-effort finger} ($q_{\mathsf{bio}}$) & $\mathbf{1}$ & $\mathbf{1}$ &
+  $\mathbf{1}$ & $\mathbf{1}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+At every database size we measured, a single presentation of an unrelated finger
+impersonates \emph{someone} with probability above $99\%$. Rate limiting does not
+mitigate an attack that succeeds on the first attempt.
+
+\paragraph{(b) Template recovery from the collision pattern.}
+On any accept, $\mathcal{L}_{\mathsf{C}}$ gives the client $S_i$. With $\theta = 2$ the
+client can enumerate all $\binom{64}{2} = 2{,}016$ candidate pairs, interpolate, and test,
+so it learns $S_i$ exactly and cheaply. Because the masks are public, each $j \in S_i$
+pins $w = 14$ known positions of $\tilde{\mathbf{y}}_i$. At $H \approx 8$ a genuine query
+produces $T \cdot q(8) = 64 \times 0.38493 \approx 24.6$ collisions, covering
+$24.6 \times 14 \approx 345$ position-slots over $128$ positions: \textbf{one successful
+authentication determines the target record}. Recovering a \emph{chosen} user costs
+$1/q_{\mathsf{bio}} \approx 22$ queries at the measured rate; recovering \emph{a} user's
+full template at $N \ge 10^{5}$ costs one.
+
+\paragraph{(c) The mOPRF dictionary.}
+Each mask restricts the PRF domain to $2^{w} = 2^{14}$, and the entire table is
+$T \cdot 2^{w} = 2^{20}$. A client learns one entry per mask per session, so a
+coupon-collector argument gives roughly $1.1\times10^{4}$ sessions for $50\%$ coverage per
+mask --- already sufficient, since 32 of 64 masks at 14 bits each over-determines a
+128-bit code --- and about $1.7\times10^{5}$ sessions for full coverage. ``PRF-masked''
+thus provides at most $w = 14$ bits of preimage resistance per sub-sample against a
+querying client.
+
+\paragraph{Required deployment controls.} Consequently: (i) rate limiting per account
+\emph{and} per relying party, with the explicit admission that it does not mitigate (a) at
+large $N$; (ii) authenticated enrolment, so an attacker cannot enrol chosen codes to probe
+the space; (iii) per-epoch rotation of $k$ and of the mask family, at the stated
+re-enrolment cost; (iv) sensor attestation as an explicit deployment assumption; and
+(v) the nonce binding of Section~\ref{sec:whoauth}.
+
+\paragraph{What we do not claim.} Malicious security --- cut-and-choose techniques exist for
+related structure-aware PSI settings~\cite{GarimellaEtAl23}, but they target geometric-ball
+rather than threshold predicates, so their overheads do not transfer and we do not estimate
+them. At-rest confidentiality against a compromised server. That the quantiser is one-way: it
+demonstrably is not, and no part of Theorem~\ref{thm:main} relies on it. And that the measured
+false-accept rates are acceptable at the sizes we tested --- \S\ref{sec:params} shows they are
+not, and why.

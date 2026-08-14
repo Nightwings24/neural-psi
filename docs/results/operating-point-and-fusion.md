@@ -1,3 +1,9 @@
+> **Superseded.** This was an early estimate over 240k impostor pairs using the
+> pre-correction reading of the FLPSI parameters. Its qualitative conclusions hold — a
+> single-finger FAR floor of a few percent, fusion as the remedy — but the authoritative
+> numbers are now in [`operating-point.md`](operating-point.md), computed exactly from
+> 2.88M pairs. Kept for provenance.
+
 # Tier-2 results — flash-psi operating-point re-tune + multi-finger fusion (no GPU/retrain)
 
 **On the Tier-1 224-model Super-Bit codes (plain, no whitening). Headline: single-finger FAR is

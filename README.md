@@ -29,7 +29,8 @@ tracks angular similarity.
 | Floating-point embedding *(the ceiling HE matches on)* | — | **0.33%** |
 | Naive `sign(>0)` | 16 | 10.12% |
 | ITQ | 16 | 5.55% |
-| **Super-Bit (chosen)** | **128** | **1.88%** |
+| **Super-Bit (chosen)** | **128** | **1.88%** (95% CI [1.56, 2.20]) |
+| ITQ *(bit-budget-matched)* | 128 | 4.55% |
 
 | | Blind-Touch (HE/CKKS) | Neural-PSI |
 |---|---|---|
@@ -43,19 +44,35 @@ The protocol behaviour was validated against the **real** cryptographic binary, 
 simulation: over 100 genuine and 9,900 impostor decisions, the measured false-accept rate was
 **4.43e-2** against a predicted **4.45e-2**.
 
-> **Scope.** All accuracy figures are on SOCOFing *Altered-Easy* — an intentionally easy,
-> single-dataset protocol — under a **semi-honest** adversary model. Cross-sensor evaluation and
-> a formal security proof are future work. See [docs/results/](docs/results/).
+### The main research finding
+
+That 4.4e-2 false-accept rate is not a bug — it is the system working as specified, and it is
+**1,550× worse than the parameters were chosen for**. The FLPSI error analysis assumes impostor
+codes are uniform (Hamming distance ~ Binomial(128, ½), σ = 5.66). Codes from a 16-dimensional
+embedding are not: measured over 2.88M held-out pairs their mean is *exactly* 64.0 — so the
+quantiser's bit-balancing makes the problem invisible to any first-moment check — while σ is
+**20.22**. Worse, 8 of those pairs are *identical* 128-bit codes, an irreducible **2.78e-6**
+floor that no choice of protocol parameters can beat. Retuning does not fix it; multi-finger
+fusion buys four orders of magnitude.
+
+Full analysis: [docs/results/operating-point.md](docs/results/operating-point.md) and
+[docs/results/code-analysis.md](docs/results/code-analysis.md).
+
+> **Scope.** All accuracy figures are on SOCOFing — an intentionally easy, single-dataset
+> protocol whose probes are synthetic alterations of the same capture — under a **semi-honest**
+> adversary model. Generalisation across capture conditions is untested. See
+> [docs/results/](docs/results/).
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| [`src/`](src/) | The pipeline. Library modules (`model.py`, `quantizer.py`, `flpsi_match.py`) plus numbered experiment scripts `01`–`10`. |
+| [`src/`](src/) | The pipeline. Library modules (`model.py`, `quantizer.py`, `flpsi_match.py`) plus numbered experiment scripts `01`–`13`. |
 | [`crypto/`](crypto/) | Our additions to the flash-psi protocol: a patch and the `fingerprint` binary that runs real FLPSI on real codes. Upstream is **not** vendored. |
 | [`demo/`](demo/) | Interactive Streamlit walkthrough of the whole pipeline, running the real model and (optionally) the real cryptography. |
 | [`docs/`](docs/) | Explanations and measured results. |
-| [`paper/`](paper/) | The paper, the technical report, the slide deck and the presentation script. |
+| [`paper/`](paper/) | LaTeX sources: the LNCS paper, the technical report, the slide deck, the pipeline walkthrough and the presentation script. |
+| [`submission/`](submission/) | **Built PDFs of every deliverable, with [`MANIFEST.md`](submission/MANIFEST.md).** |
 | [`baseline-blind-touch/`](baseline-blind-touch/) | Our reproduction of the Blind-Touch HE baseline (Docker, notebooks, docs). |
 
 ## Getting started
