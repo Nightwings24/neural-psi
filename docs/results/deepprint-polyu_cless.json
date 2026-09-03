@@ -1,0 +1,6 @@
+{
+  "corpus": "polyu_cless",
+  "n_train": 219,
+  "n_test": 117,
+  "float_eer_deepprint512": 0.23931623931623935
+}

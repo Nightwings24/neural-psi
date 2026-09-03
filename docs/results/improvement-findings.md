@@ -265,7 +265,16 @@ Two honest conclusions:
    corpus — and (b) universally tightens the code toward the uniform ideal (the comms lever); the
    5× headline is SOCOFing's best case, not a claim of 5× everywhere.**
 
+Attempting to *manufacture* a gap on the real corpora with a **strong pretrained backbone**
+(DeepPrint, Rohwedder reimpl, TexMinu 256+256-D, trained on 8000 fingers) did **not** work
+`[MEASURED: 32_deepprint_generality.py @ cdc9a9e]`: off-the-shelf DeepPrint float EER is 24% on
+PolyU and 32–43% on FVC2002 — *worse* than the small corpus-trained CNNs — because it does not
+transfer across sensors/corpora (and the publicly available checkpoint is the non-aligned
+variant). So there is no quantization gap to exploit on the real corpora regardless of backbone;
+the cross-corpus domain gap in fingerprint recognition is the binding constraint, not our code.
+
 ### 7.7 What did NOT work (measured negatives)
+- **Pretrained-backbone transfer** (DeepPrint → PolyU/FVC, §7.6) — near-chance features, no gap.
 - **End-to-end fine-tuning of the CNN** (`24_qat_e2e.py`) degrades monotonically — perturbing
   the converged embedding destroys discriminability faster than the code objective repairs it.
 - **Forcing balance via a BCE separation loss** on the 16-D embedding *inflates* σ (14.6→18.6)
