@@ -75,8 +75,8 @@ def fusion_frontier(name, cg, cp, fingers, N=5000, K=3):
     imp_idx = np.array([[Hpg[fidx[keys[a]][m], fidx[keys[b]][m]] for m in range(K)]
                         for a in range(len(keys)) for b in range(len(keys)) if a != b])  # (P, K)
     best = {k: None for k in (2, 3)}
-    for w in [8, 10, 12, 14, 16, 20, 24, 28, 32, 40]:
-        for t in [0, 1, 2]:
+    for w in list(range(4, 33)) + [36, 40]:
+        for t in [0, 1, 2, 3]:
             A = accept_matrix(subsample_match_probs(w, t))
             for th in range(1, T+1):
                 acc = A[:, th]
