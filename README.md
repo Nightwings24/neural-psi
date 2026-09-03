@@ -7,9 +7,18 @@ A three-month internship project at QNu Labs by Rineet Pandey, Ayan Shil and Pra
 supervised by Dr. Amit Kumar Chauhan, Ayan Chattopadhyay and Dr. Rohitkumar R. Upadhyay.
 
 ```
-fingerprint image ──CNN──► e ∈ ℝ¹⁶ ──Super-Bit──► b ∈ {0,1}¹²⁸ ──FLPSI──► label or reject
-                  (client, plaintext)              (16 bytes)      (server never sees the code)
+fingerprint image ──CNN──► features ──learned binariser──► b ∈ {0,1}¹²⁸ ──FLPSI──► label or reject
+                  (client, plaintext)                       (16 bytes)      (server never sees the code)
 ```
+
+> ### 🔎 Latest results — two improvement iterations
+> Since the initial Super-Bit design, two rounds of work on the binariser cut same-sensor EER
+> from **1.89% → 0.17%** (~11×, on SOCOFing) and communication by **45%**, on the same 128-bit
+> backend. **Start here:**
+> - **[docs/results/RESULTS-SUMMARY.md](docs/results/RESULTS-SUMMARY.md)** — one-page overview (both iterations, headline table, Blind-Touch comparison).
+> - **[docs/results/improvement-findings.md](docs/results/improvement-findings.md)** — full technical record.
+> - **[docs/paper/architecture.html](docs/paper/architecture.html)** — end-to-end architecture diagram (open in a browser).
+> - **[docs/results/future-directions.md](docs/results/future-directions.md)** — what to try next.
 
 ## The idea
 
@@ -24,50 +33,56 @@ tracks angular similarity.
 
 ## Results
 
-| Representation | Bits | Equal error rate |
-|---|---|---|
-| Floating-point embedding *(the ceiling HE matches on)* | — | **0.33%** |
-| Naive `sign(>0)` | 16 | 10.12% |
-| ITQ | 16 | 5.55% |
-| **Super-Bit (chosen)** | **128** | **1.88%** (95% CI [1.56, 2.20]) |
-| ITQ *(bit-budget-matched)* | 128 | 4.55% |
+**Same-sensor EER on SOCOFing (held-out, identity-bootstrap 95% CI) across two improvement
+iterations — same 128-bit FLPSI backend throughout:**
 
-| | Blind-Touch (HE/CKKS) | Neural-PSI |
+| Binariser | EER (Altered-Easy) | impostor σ (ideal 5.66) |
 |---|---|---|
+| Super-Bit LSH *(initial)* | 1.89% [1.57, 2.22] | 20.1 |
+| Round 1 — metric-aware ortho-thermometer | 0.87% [0.62, 0.99] | 14.6 |
+| **Round 2 — quantization-aware feature-head** | **0.17% [0.06, 0.26]** | **6.72** |
+
+The Round-2 code also cuts **communication by 45%** at a matched operating point (validated
+end-to-end through the real crypto binary) and holds its advantage across the Altered
+Easy/Medium/Hard ladder. Full numbers + generality tests (PolyU, FVC2002):
+**[docs/results/RESULTS-SUMMARY.md](docs/results/RESULTS-SUMMARY.md)**.
+
+### vs Blind-Touch (the HE baseline we build on)
+
+| | Blind-Touch (HE/CKKS, 3-server) | Neural-PSI (FLPSI, 2-party) |
+|---|---|---|
+| SOCOFing EER | 0.7% | **0.17%** |
 | Template per user | 1.67 KB | **16 B** |
 | Evaluation (Galois) key | 117 MB | **none** |
-| Latency, single server (N = 5,000) | 1,334 ms | **~824 ms** |
-| Per-query communication (N = 5,000) | 856 KB | 7.77 MB |
-| Output | match score | **record label** |
+| Per-query communication (N = 5,000) | **856 KB** | 2.38 MB *(was 7.77 MB)* |
+| Output | match score | **record label only** |
 
-The protocol behaviour was validated against the **real** cryptographic binary, not only in
-simulation: over 100 genuine and 9,900 impostor decisions, the measured false-accept rate was
-**4.43e-2** against a predicted **4.45e-2**.
+We win on accuracy and protocol simplicity (no homomorphic-encryption cluster); compressed CKKS
+still beats us on raw communication — the −45% narrows, not erases, that gap. All figures cross-
+checked against the **real** cryptographic binary, not just simulation.
 
-### The main research finding
+### The diagnosis that drove the improvements
 
-That 4.4e-2 false-accept rate is not a bug — it is the system working as specified, and it is
-**1,550× worse than the parameters were chosen for**. The FLPSI error analysis assumes impostor
-codes are uniform (Hamming distance ~ Binomial(128, ½), σ = 5.66). Codes from a 16-dimensional
-embedding are not: measured over 2.88M held-out pairs their mean is *exactly* 64.0 — so the
-quantiser's bit-balancing makes the problem invisible to any first-moment check — while σ is
-**20.22**. Worse, 8 of those pairs are *identical* 128-bit codes, an irreducible **2.78e-6**
-floor that no choice of protocol parameters can beat. Retuning does not fix it; multi-finger
-fusion buys four orders of magnitude.
-
-Full analysis: [docs/results/operating-point.md](docs/results/operating-point.md) and
-[docs/results/code-analysis.md](docs/results/code-analysis.md).
+The gains trace to one measurement: a 128-bit code built from a 16-dimensional embedding uses
+only **~14–18 of its bits**. Impostor codes are far from the uniform ideal the FLPSI error
+analysis assumes — mean *exactly* 64.0 (invisible to any first-moment check) but σ = 20.1 vs the
+Binomial(128, ½) ideal of 5.66, and a few distinct fingers even produce identical codes.
+**Round 1** fixed the *distance metric* the code preserves (Euclidean, not cosine); **Round 2**
+rebuilt the code from the CNN's richer features to be balanced and decorrelated, pushing σ to
+**6.72** and closing most of the accuracy/communication gap at once. Full analysis:
+[docs/results/improvement-findings.md](docs/results/improvement-findings.md).
 
 > **Scope.** All accuracy figures are on SOCOFing — an intentionally easy, single-dataset
 > protocol whose probes are synthetic alterations of the same capture — under a **semi-honest**
-> adversary model. Generalisation across capture conditions is untested. See
-> [docs/results/](docs/results/).
+> adversary model. Generality tests on PolyU and FVC2002 show the communication/code-quality
+> gain is universal, while the large accuracy gain needs a high-fidelity corpus; cross-corpus
+> transfer is a known-hard wall. See [docs/results/](docs/results/).
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| [`src/`](src/) | The pipeline. Library modules (`model.py`, `quantizer.py`, `flpsi_match.py`) plus numbered experiment scripts `01`–`13`. |
+| [`src/`](src/) | The pipeline. Library modules (`model.py`, `quantizer.py`, `flpsi_match.py`), the original experiment scripts `01`–`13`, and the two improvement iterations in `14`–`32` (dim sweep, metric-aware bridge, fusion, fragile-bit diagnostic, quantization-aware feature-head, operating-point/comms, generality on PolyU/FVC/DeepPrint). |
 | [`crypto/`](crypto/) | Our additions to the flash-psi protocol: a patch and the `fingerprint` binary that runs real FLPSI on real codes. Upstream is **not** vendored. |
 | [`demo/`](demo/) | Interactive Streamlit walkthrough of the whole pipeline, running the real model and (optionally) the real cryptography. |
 | [`docs/`](docs/) | Explanations and measured results. |
@@ -98,6 +113,18 @@ pip install -r requirements.txt
    ```bash
    python src/07_superbit_eer.py --img 224 --ckpt feature_model_224.pt
    ```
+4. Reproduce the improvements. The diagnostic and Round-1 scripts run on the **committed** cached
+   embeddings (`src/data/dim_ablation_emb_224.npz`), so they work without re-extracting SOCOFing;
+   the Round-2 feature-head extracts CNN features from the raw images, so it needs step 1+2 done.
+   ```bash
+   python src/22_fragile_bits.py                         # diagnosis: effective bits, impostor σ
+   python src/21_bridge_ci.py                            # Round-1 ortho-thermometer EER + CI
+   python src/28_qat_featurehead.py --tag repro          # Round-2 feature-head (needs raw images)
+   python src/29_qat_ladder.py --map data/qat_head_repro_map.npz --tag repro   # Easy/Med/Hard
+   python src/25_qat_downstream.py --codes data/qat_codes_repro.npz --tag repro # comms vs baseline
+   ```
+   Generality scripts `30`–`32` need the PolyU / FVC2002 corpora and (for `32`) the DeepPrint
+   weights — see [`docs/results/future-directions.md`](docs/results/future-directions.md).
 
 For the real-cryptography measurements, build the protocol binary first — see
 [`crypto/README.md`](crypto/README.md).
