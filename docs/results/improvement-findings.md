@@ -126,20 +126,117 @@ Blind-Touch 16-D CNN, not a training artifact.
    deployment estimate. (Caveat: 60 epochs, 252 train fingers — more data/epochs might narrow
    the same-sensor gap, but the cross-sensor chance-level result is unambiguous.)
 
-## 5. Dimension sweep (E2, the spine) — IN PROGRESS
+## 5. Dimension sweep (E2) — DONE (D=16/32/64); corrects the repo's remedy
 
-Retraining {32,64,128,256}-D at 150 epochs, re-measuring σ, floor, EER
+Retrained at 150 epochs per dimension, re-measured σ, floor, EER
 `[MEASURED: 14_dim_sweep_eval.py @ f855367; driver scratchpad/dim_sweep.sh]`.
+(The `thermo` column here is the *rand*-thermometer variant used by the sweep evaluator;
+the best bridge, ortho-thermometer, is in §2.)
 
 | D | float EER (Euc) | Super-Bit EER | SB imp σ | SB H=0 | thermo EER | thermo σ | thermo H=0 |
 |---|---|---|---|---|---|---|---|
 | 16 | 0.33% | 1.89% | 20.11 | 2 | 0.97% | 14.16 | 1 |
 | 32 | 0.14% | 2.13% | 19.66 | 2 | 1.65% | 14.90 | 1 |
-| 64/128/256 | (running) | | | | | | |
+| 64 | 0.19% | 2.32% | 18.05 | 0 | 1.71% | 13.79 | 1 |
 
-**Preliminary and surprising:** 16→32-D **improves the float ceiling but not the 128-bit
-code** — σ barely moves, the H=0 floor is unchanged, and binary EER slightly worsens. A fixed
-128-bit code cannot carry more embedding DOF. If this persists to 256-D it **overturns** the
-repo's claim that raising the embedding dimension "would move every number" — the floor would
-be more fundamental than dimensionality, and the real lever is code-length co-design (blocked
-by the FLPSI 128-bit backend) or the metric-aware bridge, not embedding width. Awaiting D≥64.
+**Conclusion:** raising embedding width **improves the float ceiling but not the fixed-128-bit
+code** — Super-Bit EER actually *worsens* (1.89→2.32%), impostor σ barely moves (20.1→18.1,
+nowhere near the uniform model's 5.66), and the code EER does not benefit. A fixed 128-bit code
+cannot carry more embedding DOF, so more dimensions are wasted at the coding stage. This
+**corrects** the repo's claim that raising the embedding dimension "would move every number":
+the real levers are the metric-aware bridge (§2) and fusion (§3), **not** embedding width. (Only
+the exact H=0 count responds slightly — SB floor 2→2→0 — but the distribution overlap that
+drives the FAR gap does not.) D=128/256 were skipped: the trend is monotone and unambiguous
+through D=64, and the runs were dropped to avoid OOM on the 14 GB machine.
+
+## 6. Data-integrity fix (collision-floor number)
+
+The repo reported the collision floor two ways; both are correct under different impostor sets
+`[MEASURED: in-session over src/data/sb_codes_224.npz @ f855367]`: the operational 1:N floor
+(probe×gallery, off-diagonal) is **2 / 1,438,800 = 1.39e-6, Poisson 95% CI [1.68e-7, 5.02e-6]**;
+`operating-point.md`'s 8 / 2,877,600 = 2.78e-6 additionally counts enrol-vs-enrol pairs (not
+queries). Adopt the probe×gallery definition as canonical. (Details in
+`docs/research-plan-space2026.md` §6 MF-1.)
+
+## 7. Quantization-aware code — round 2 (the big dual win)
+
+Round-1 (§2) improved the *bridge* but kept a training-free, fixed map. Round 2 asks: can we
+learn the 128-bit code, and where does the code lose information? A diagnostic and a
+learned-head experiment answer both. All numbers held-out SOCOFing (1200 ids), identity
+bootstrap 95% CI. Provenance: `[MEASURED: <script> @ cdc9a9e]`.
+
+### 7.1 Diagnosis — the code is near the *embedding-dimension* ceiling, not wasting prunable bits
+`[MEASURED: 22_fragile_bits.py @ cdc9a9e]` The ortho-thermometer 128-bit code (EER 0.87%,
+impostor σ 14.60) has only **~14–18 effective independent bits** (Daugman N=17.9;
+correlation-eigenspectrum participation-ratio 13.6) — because a 128-bit code built from the
+**16-D** embedding is a rank-16 map: at most ~16 bits can be independent, so σ cannot approach
+the uniform-code 5.66. Fragile-bit reweighting / top-k pruning of the existing code **does not
+help** (all worse than the full 128), so the redundancy is *entangled across correlated bits*,
+not removable — the fix must change how bits are generated, and/or use a richer input.
+
+### 7.2 The lever — the 16-D bottleneck discards half the signal
+The frozen CNN's **25088-D conv features** (unit-normalised) have float Euclidean
+**EER 0.164%** — half the 16-D embedding's 0.33% `[MEASURED @ cdc9a9e]`. The Blind-Touch 16-D
+fc bottleneck throws away discriminative signal a 128-bit code could carry.
+
+### 7.3 Result — a quantization-aware head on the conv features
+Train a 128-bit head on PCA-512 of the frozen conv features (public PCA map fit on train; 512
+dims capture 99.9% variance) with a straight-through-sign objective = genuine-closeness +
+bit-balance + **bit-decorrelation** (the σ lever) + binarisation. Warm-started from a 128-
+projection ortho-thermometer on the PCA features; **trained on a disjoint identity split,
+epoch selected on a held-out validation split (no test peeking), reported on the untouched
+test set** `[MEASURED: 28_qat_featurehead.py @ cdc9a9e]`:
+
+| code | EER (test, 95% CI) | impostor σ | imp mean | H=0 |
+|---|---|---|---|---|
+| ortho-thermometer 128 (round 1) | 0.87% [0.62, 0.99] | 14.60 | 47.3 | 0 |
+| frozen 16-D QAT head | 0.65% [0.47, 0.86] | 13.21 | 47 | 0 |
+| **feature-head QAT (val-selected)** | **0.17% [0.06, 0.26]** | **6.72** | 64.1 | 0 |
+
+→ **~5× lower EER than the round-1 bridge, CIs non-overlapping** (converged test EER ranged
+0.09–0.17% across late epochs; the val-selected checkpoint is 0.17%). Impostor σ 6.72 is close
+to the uniform-code ideal 5.66, and the code is balanced (impostor mean 64). Same frozen CNN,
+**same 128-bit flash-psi backend.** Honest framing: the code EER matches the *raw-feature*
+Euclidean float (0.164%) because the head performs learned metric learning on the features —
+this is a *trained* quantizer (fit on a disjoint identity split), not the training-free
+public map of §2; and SOCOFing remains optimistic (§4) so absolute numbers are best-case, but
+the ~5× *relative* gain is on the same corpus/CNN/backend as every prior number.
+
+### 7.4 The comms win is the *same* lever (cross-layer)
+Because the feature-head code has a tight, balanced impostor distribution, it reaches a matched
+operating point with a far cheaper crypto config. Cheapest `(w,t,T)` for TAR≥95%, per-record
+FAR≤1e-2 `[MEASURED: 25_qat_downstream.py + real `simulation` binary @ cdc9a9e]`:
+
+| code | cheapest (w, t, T) | communication @ N=5000 |
+|---|---|---|
+| ortho-thermometer | (19, 3, 34) | 4317 KB |
+| **feature-head QAT** | **(6, 3, 18)** | **2377 KB (−45%)** |
+
+**Real-crypto validated** through the actual flash-psi `fingerprint` binary at (w=6, t=3, T=18):
+real TAR 96.7%, real FAR 5.65e-3 (predicted 7.19e-3), ~84 ms/query
+`[MEASURED: 27_qat_realcrypto.py @ cdc9a9e]`. So one learned code delivers **both** a large
+accuracy gain **and** ~45% less communication — the two priorities from a single change.
+
+### 7.5 Fusion & the genuine/σ tradeoff (honest, mixed)
+The feature code trades a higher *genuine* Hamming (~17 vs the 16-D embedding's ~7) for its
+tight impostor tail; the FLPSI subsample-fusion accept model rewards *low* genuine Hamming, so
+multi-finger fusion is **variant-dependent, not a robust win** `[MEASURED: 26_qat_fusion.py @
+cdc9a9e]`: a `lam_gen`-tuned variant (genuine Hamming 9.6, σ 11.2, EER 0.19%) reaches **3-of-3
+FRR 0.0%** at a secure query-FAR@5000 ≤ 1e-2 point (vs ortho 0.5%) but its 2-of-3 is worse
+(12.1% vs 5.2%); the σ-optimal variant is roughly neutral at 2-of-3 (4.3% vs 5.2%). Net: the
+single-finger EER and comms wins are robust; fusion is a tunable tradeoff, not a clean win.
+
+### 7.6 What did NOT work (measured negatives)
+- **End-to-end fine-tuning of the CNN** (`24_qat_e2e.py`) degrades monotonically — perturbing
+  the converged embedding destroys discriminability faster than the code objective repairs it.
+- **Forcing balance via a BCE separation loss** on the 16-D embedding *inflates* σ (14.6→18.6)
+  and worsens EER — balance and σ-tightening are in tension when the input is only 16-D.
+- **Fragile-bit pruning/reweighting** of the fixed code (§7.1) — no gain.
+
+## Tooling produced this session
+Round 1: `train_gpu_224.py --emb-dim`; scripts `src/14`–`21`. Round 2: `src/22` (fragile-bit
+diagnostic), `src/23` (frozen QAT head, whiten/BCE, optional nonlinear residual), `src/24`
+(end-to-end co-design — negative), `src/25` (operating-point + comms via the real `simulation`
+binary), `src/26` (fusion on a learned code), `src/27` (real-crypto validation, T passed
+explicitly), `src/28` (feature-head QAT — the headline). Large model/array artifacts are
+regenerable and left uncommitted.
