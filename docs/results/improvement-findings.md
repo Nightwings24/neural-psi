@@ -287,5 +287,6 @@ diagnostic), `src/23` (frozen QAT head, whiten/BCE, optional nonlinear residual)
 (end-to-end co-design — negative), `src/25` (operating-point + comms via the real `simulation`
 binary), `src/26` (fusion on a learned code), `src/27` (real-crypto validation, T passed
 explicitly), `src/28` (feature-head QAT — the headline), `src/29` (accuracy ladder), `src/30`
-(PolyU generality), `src/31` (FVC2002 fine-tune + generality). FVC2002 (full A-sets, CC0) on
-`/mnt/SharedData/fvc/`. Large model/array artifacts are regenerable and left uncommitted.
+(PolyU generality), `src/31` (FVC2002 fine-tune + generality), `src/32` (pretrained-DeepPrint
+generality probe — negative). FVC2002 (full A-sets, CC0) on `/mnt/SharedData/fvc/`. Large
+model/array artifacts are regenerable and left uncommitted.
