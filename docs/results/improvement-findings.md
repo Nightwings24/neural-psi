@@ -202,6 +202,16 @@ this is a *trained* quantizer (fit on a disjoint identity split), not the traini
 public map of §2; and SOCOFing remains optimistic (§4) so absolute numbers are best-case, but
 the ~5× *relative* gain is on the same corpus/CNN/backend as every prior number.
 
+Across the full **Altered difficulty ladder** (held-out test, gallery = enrolled real print)
+`[MEASURED: 29_qat_ladder.py @ cdc9a9e]` the advantage holds at every level, all CIs
+non-overlapping and impostor σ steady ~6.7 (vs the baseline's ~14.4):
+
+| difficulty | ortho-thermometer EER | feature-head QAT EER |
+|---|---|---|
+| Altered-Easy | 0.87% [0.62, 0.99] | **0.17% [0.06, 0.26]** |
+| Altered-Medium | 2.61% [2.17, 2.92] | **0.84% [0.62, 1.17]** |
+| Altered-Hard | 4.10% [3.64, 4.60] | **2.18% [1.81, 2.70]** |
+
 ### 7.4 The comms win is the *same* lever (cross-layer)
 Because the feature-head code has a tight, balanced impostor distribution, it reaches a matched
 operating point with a far cheaper crypto config. Cheapest `(w,t,T)` for TAR≥95%, per-record
