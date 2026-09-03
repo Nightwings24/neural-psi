@@ -11,6 +11,31 @@ src/data/feature_model.pt
 # everything else in src/data/ is small and intentionally committed
 # (trained 224 model, held-out split, cached codes) so the demo runs out of the box
 
+# ---- Round-2 artifacts: large / regenerable models, feature caches, learned codes ----
+# (all reproducible from the numbered scripts; never push these. NOTE: gitignore has no
+#  inline comments — keep patterns on their own lines.)
+# dim-sweep / PolyU / FVC checkpoints
+src/data/feature_model_224_d*.pt
+src/data/feature_model_polyu*.pt
+src/data/feature_model_fvc*.pt
+# trained quantizer heads
+src/data/qat_head_*.pt
+# conv-feature cache, train pairs, learned codes, public maps
+src/data/qat_*.npz
+# PolyU image arrays (~300 MB each) and ids
+src/data/polyu_*.npy
+src/data/head_w1_224_d*.npy
+src/data/ids_test_224_d*.npy
+src/data/eer_report.txt
+# smoke-test outputs (not real results)
+docs/results/qat-head-smoke*.json
+docs/results/qat-featurehead-feat512s.json
+
+# ---- Third-party pretrained weights (download separately; see docs) ----
+flx_repo/
+flx_w/
+*.pyt
+
 # ---- Rust build output & upstream clone ----
 crypto/flash-psi/
 target/

@@ -1,0 +1,6 @@
+{
+  "corpus": "fvc_Db1_a",
+  "n_train": 65,
+  "n_test": 35,
+  "float_eer_deepprint512": 0.3224489795918367
+}

@@ -1,0 +1,191 @@
+<title>Neural-PSI Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --bg:#eaeef2; --surface:#ffffff; --surface-2:#dfe5ec; --ink:#1b2530;
+    --muted:#586574; --line:#c3ccd6; --accent:#0e7d8a; --accent-soft:#d4ecef;
+    --accent-ink:#0a5c66;
+    --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#11161c; --surface:#1b222b; --surface-2:#242e39; --ink:#e7ecf2;
+      --muted:#94a2b1; --line:#37424f; --accent:#3fb7c5; --accent-soft:#123c43;
+      --accent-ink:#7fd7e1;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#11161c; --surface:#1b222b; --surface-2:#242e39; --ink:#e7ecf2;
+    --muted:#94a2b1; --line:#37424f; --accent:#3fb7c5; --accent-soft:#123c43;
+    --accent-ink:#7fd7e1;
+  }
+
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+    margin:0;padding:40px 24px 56px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1140px;margin:0 auto;}
+  header{margin-bottom:26px;}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent-ink);margin:0 0 6px;}
+  h1{font-size:30px;font-weight:600;margin:0;letter-spacing:-.01em;text-wrap:balance;}
+  .lede{color:var(--muted);margin:8px 0 0;max-width:70ch;font-size:15px;}
+
+  figure{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:20px 20px 8px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow-x:auto;}
+  svg{display:block;width:100%;height:auto;min-width:860px;color:var(--muted);}
+  figcaption{color:var(--muted);font-size:13.5px;margin:14px 4px 6px;max-width:88ch;}
+
+  /* svg element roles (styled from page CSS; no <style> inside the svg) */
+  .mod{fill:var(--surface);stroke:var(--line);stroke-width:1.5;}
+  .data{fill:var(--surface-2);stroke:var(--line);stroke-width:1.3;stroke-dasharray:5 3;}
+  .contrib{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.8;}
+  .psi{fill:var(--surface);stroke:var(--ink);stroke-width:1.8;}
+  .flow{stroke:var(--muted);stroke-width:1.6;fill:none;}
+  .reuse{stroke:var(--accent);stroke-width:1.5;fill:none;stroke-dasharray:2 4;stroke-linecap:round;}
+  .lab{fill:var(--ink);font-family:var(--sans);font-size:13px;font-weight:500;}
+  .lab-c{fill:var(--accent-ink);font-family:var(--sans);font-size:13px;font-weight:600;}
+  .sub{fill:var(--muted);font-family:var(--mono);font-size:11px;}
+  .sub-c{fill:var(--accent-ink);font-family:var(--mono);font-size:11px;}
+  .sec{fill:var(--accent-ink);font-family:var(--mono);font-size:12px;letter-spacing:.12em;font-weight:500;}
+  .alab{fill:var(--muted);font-family:var(--mono);font-size:10.5px;}
+  .brk{stroke:var(--accent);stroke-width:1.4;fill:none;}
+
+  .legend{display:flex;flex-wrap:wrap;gap:8px 22px;margin:18px 4px 0;
+    font-size:12.5px;color:var(--muted);align-items:center;}
+  .legend span{display:inline-flex;align-items:center;gap:8px;}
+  .sw{width:22px;height:14px;border-radius:3px;display:inline-block;flex:none;}
+  .sw.contrib{background:var(--accent-soft);border:1.5px solid var(--accent);}
+  .sw.mod{background:var(--surface);border:1.5px solid var(--line);}
+  .sw.data{background:var(--surface-2);border:1.3px dashed var(--line);}
+  .sw.reuse{background:none;border:0;border-top:2px dashed var(--accent);height:0;border-radius:0;}
+  .note{margin:16px 4px 0;padding:14px 16px;border-left:3px solid var(--accent);
+    background:var(--surface);border-radius:0 8px 8px 0;font-size:13.5px;color:var(--ink);max-width:92ch;}
+  .note b{color:var(--accent-ink);font-weight:600;}
+  code{font-family:var(--mono);font-size:.92em;color:var(--accent-ink);}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">System architecture</p>
+    <h1>Neural-PSI</h1>
+    <p class="lede">Privacy-preserving fingerprint authentication: a neural encoder turns a print
+      into a 128-bit code, and two parties decide "close enough" through Fuzzy-Labelled Private
+      Set Intersection — the server learns only a label on a match, and neither side reveals its
+      fingerprints.</p>
+  </header>
+
+  <figure>
+    <svg viewBox="0 0 1120 636" role="img"
+      aria-label="Two-stage pipeline. Stage one, Encode: a 224x224 fingerprint passes through a frozen CNN encoder to a 25,088-dimensional conv feature vector, then a public PCA-to-512 map, then a learned quantization-aware head to a 128-bit code. The PCA and QAT head together are the binariser, this work's contribution. Stage two, Match: the client holds the query code and the server holds a gallery of labelled codes; a 2-party Fuzzy-Labelled PSI draws w of the 128 bit-positions T times and accepts on at least t clean draws, revealing only the matching label or nothing.">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+        </marker>
+      </defs>
+
+      <!-- ============ STAGE 1: ENCODE ============ -->
+      <text x="24" y="30" class="sec">1 · ENCODE — public map, identical at enrollment &amp; query</text>
+
+      <!-- boxes -->
+      <rect class="data" x="24"  y="52" width="120" height="78" rx="8"/>
+      <text x="84"  y="86"  text-anchor="middle" class="lab">Fingerprint</text>
+      <text x="84"  y="105" text-anchor="middle" class="sub">224 × 224</text>
+
+      <rect class="mod"  x="178" y="52" width="152" height="78" rx="8"/>
+      <text x="254" y="86"  text-anchor="middle" class="lab">CNN encoder</text>
+      <text x="254" y="105" text-anchor="middle" class="sub">5 conv blocks · frozen</text>
+
+      <rect class="data" x="364" y="52" width="120" height="78" rx="8"/>
+      <text x="424" y="86"  text-anchor="middle" class="lab">Conv features</text>
+      <text x="424" y="105" text-anchor="middle" class="sub">25,088-D</text>
+
+      <rect class="contrib" x="516" y="52" width="140" height="78" rx="8"/>
+      <text x="586" y="86"  text-anchor="middle" class="lab-c">PCA → 512</text>
+      <text x="586" y="105" text-anchor="middle" class="sub-c">public · fit on train</text>
+
+      <rect class="contrib" x="688" y="52" width="196" height="78" rx="8"/>
+      <text x="786" y="82"  text-anchor="middle" class="lab-c">QAT head → 128 bits</text>
+      <text x="786" y="101" text-anchor="middle" class="sub-c">learned · balanced +</text>
+      <text x="786" y="115" text-anchor="middle" class="sub-c">decorrelated</text>
+
+      <rect class="data" x="916" y="52" width="150" height="78" rx="8"/>
+      <text x="991" y="86"  text-anchor="middle" class="lab">128-bit code</text>
+      <text x="991" y="105" text-anchor="middle" class="sub">b ∈ {0,1}¹²⁸</text>
+
+      <!-- flow arrows -->
+      <line class="flow" x1="144" y1="91" x2="176" y2="91" marker-end="url(#ah)"/>
+      <line class="flow" x1="330" y1="91" x2="362" y2="91" marker-end="url(#ah)"/>
+      <line class="flow" x1="484" y1="91" x2="514" y2="91" marker-end="url(#ah)"/>
+      <line class="flow" x1="656" y1="91" x2="686" y2="91" marker-end="url(#ah)"/>
+      <line class="flow" x1="884" y1="91" x2="914" y2="91" marker-end="url(#ah)"/>
+
+      <!-- contribution bracket under PCA+QAT -->
+      <path class="brk" d="M516,140 v8 h368 v-8"/>
+      <text x="700" y="166" text-anchor="middle" class="lab-c">the binariser — our contribution</text>
+      <text x="700" y="182" text-anchor="middle" class="sub">R1 metric-aware bridge  →  R2 quantization-aware feature-head</text>
+
+      <!-- reuse connectors: code feeds both parties -->
+      <path class="reuse" d="M991,130 V206 H184 V300" marker-end="url(#ah)"/>
+      <path class="reuse" d="M991,206 H944 V300" marker-end="url(#ah)"/>
+      <text x="600" y="200" text-anchor="middle" class="alab">same code — client computes online (b_q); server precomputes at enrollment (×N)</text>
+
+      <!-- ============ STAGE 2: MATCH ============ -->
+      <text x="24" y="256" class="sec">2 · MATCH — Fuzzy-Labelled PSI · 2-party, semi-honest</text>
+
+      <!-- client -->
+      <rect class="mod" x="24" y="300" width="320" height="150" rx="10"/>
+      <text x="44" y="330" class="lab">Client (device)</text>
+      <text x="44" y="360" class="sub">query code  b_q</text>
+      <text x="44" y="380" class="sub">∈ {0,1}¹²⁸  ·  kept private</text>
+      <text x="44" y="416" class="alab">runs the encoder above on the</text>
+      <text x="44" y="431" class="alab">live capture, on-device</text>
+
+      <!-- FLPSI -->
+      <rect class="psi" x="400" y="300" width="320" height="150" rx="10"/>
+      <text x="560" y="328" text-anchor="middle" class="lab">Fuzzy-Labelled PSI</text>
+      <text x="416" y="356" class="sub">for k = 1..T:</text>
+      <text x="416" y="373" class="sub">   draw w of 128 positions</text>
+      <text x="416" y="390" class="sub">   draw is clean if all w match</text>
+      <text x="416" y="407" class="sub">accept if ≥ t clean draws</text>
+      <text x="416" y="431" class="sub-c">⇔ Hamming(b_q, bᵢ) ≤ threshold</text>
+
+      <!-- server -->
+      <rect class="mod" x="776" y="300" width="320" height="150" rx="10"/>
+      <text x="796" y="330" class="lab">Server</text>
+      <text x="796" y="360" class="sub">gallery { (labelᵢ, bᵢ) }</text>
+      <text x="796" y="380" class="sub">i = 1..N  ·  kept private</text>
+      <text x="796" y="416" class="alab">enrolled codes only —</text>
+      <text x="796" y="431" class="alab">no raw prints stored</text>
+
+      <!-- interaction arrows -->
+      <line class="flow" x1="344" y1="375" x2="398" y2="375" marker-end="url(#ah)" marker-start="url(#ah)"/>
+      <text x="371" y="366" text-anchor="middle" class="alab">OPRF /</text>
+      <text x="371" y="392" text-anchor="middle" class="alab">VOLE</text>
+      <line class="flow" x1="776" y1="375" x2="722" y2="375" marker-end="url(#ah)"/>
+
+      <!-- output -->
+      <line class="flow" x1="560" y1="450" x2="560" y2="478" marker-end="url(#ah)"/>
+      <rect class="data" x="392" y="480" width="336" height="44" rx="8"/>
+      <text x="560" y="500" text-anchor="middle" class="lab">revealed to client:  label ℓ  or  ⊥</text>
+      <text x="560" y="516" text-anchor="middle" class="sub">a match returns only its label — nothing else leaks</text>
+    </svg>
+
+    <figcaption>The binariser (PCA + quantization-aware head) is where both project iterations act
+      and where accuracy and communication are jointly decided: it sets the code's Hamming
+      distribution, which the PSI's <code>w</code>-of-128, <code>T</code>-draw accept rule reads —
+      so a tighter code lowers EER and the subsample count <code>T</code> at once.</figcaption>
+  </figure>
+
+  <div class="legend">
+    <span><i class="sw contrib"></i>contribution (binariser)</span>
+    <span><i class="sw mod"></i>module (learned / fixed)</span>
+    <span><i class="sw data"></i>data / code object</span>
+    <span><i class="sw reuse"></i>encoder reused (online / enrollment)</span>
+  </div>
+
+  <p class="note"><b>Public vs private.</b> The CNN, PCA map and QAT-head weights are <b>public</b>
+    (published, same for everyone). The fingerprints and the 128-bit codes are <b>private</b>: they
+    never leave a party in the clear, and the protocol discloses only the matching label on a
+    close-enough match — or <code>⊥</code> otherwise. Multi-finger fusion (not shown) runs several
+    codes through the same matcher and accepts on a quorum.</p>
+</div>

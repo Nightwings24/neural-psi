@@ -1,0 +1,10 @@
+[
+  {
+    "code": "ortho-thermo",
+    "feasible": false
+  },
+  {
+    "code": "lin",
+    "feasible": false
+  }
+]

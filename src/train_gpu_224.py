@@ -68,6 +68,8 @@ class PairDataset(torch.utils.data.Dataset):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--img", type=int, default=224)
+    ap.add_argument("--emb-dim", type=int, default=16,
+                    help="embedding dimension (FC output); outputs are tagged _d<emb-dim>")
     ap.add_argument("--epochs", type=int, default=150)
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--lr", type=float, default=1e-3)
@@ -99,15 +101,16 @@ def main():
     rng.shuffle(idx)
     n_test = int(round(len(idx) * args.test_size))
     te_idx, tr_idx = idx[:n_test], idx[n_test:]
-    np.save(os.path.join(DATA, "ids_test_224.npy"), ids_real[te_idx])
-    print(f"[train] {len(tr_idx)} train / {len(te_idx)} test identities | img={args.img}")
+    tag = f"_d{args.emb_dim}"
+    np.save(os.path.join(DATA, f"ids_test_224{tag}.npy"), ids_real[te_idx])
+    print(f"[train] {len(tr_idx)} train / {len(te_idx)} test identities | img={args.img} | emb_dim={args.emb_dim}")
 
     ds = PairDataset(x_real[tr_idx], args.img)
     dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True,
                                      num_workers=args.workers, drop_last=True,
                                      pin_memory=use_amp, persistent_workers=args.workers > 0)
 
-    model = SiameseModel(img=args.img).to(device)
+    model = SiameseModel(img=args.img, emb_dim=args.emb_dim).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
@@ -134,10 +137,10 @@ def main():
         print(f"[train] epoch {ep}/{args.epochs}  loss={run/tot:.4f}  "
               f"pair_acc={correct/tot:.3f}  lr={sched.get_last_lr()[0]:.2e}")
 
-    torch.save(model.feature_model.state_dict(), os.path.join(DATA, "feature_model_224.pt"))
-    w1 = model.head.weight.detach().cpu().numpy().reshape(-1)   # (16,) for whitening
-    np.save(os.path.join(DATA, "head_w1_224.npy"), w1)
-    print(f"[train] saved feature_model_224.pt + head_w1_224.npy -> {DATA}")
+    torch.save(model.feature_model.state_dict(), os.path.join(DATA, f"feature_model_224{tag}.pt"))
+    w1 = model.head.weight.detach().cpu().numpy().reshape(-1)   # (emb_dim,) for whitening
+    np.save(os.path.join(DATA, f"head_w1_224{tag}.npy"), w1)
+    print(f"[train] saved feature_model_224{tag}.pt + head_w1_224{tag}.npy -> {DATA}")
 
 
 if __name__ == "__main__":
