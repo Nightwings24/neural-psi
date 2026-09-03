@@ -64,6 +64,32 @@ Tested on PolyU and FVC2002 (and a pretrained DeepPrint backbone):
 End-to-end CNN fine-tuning · BCE balance objective · fragile-bit pruning · pretrained-backbone
 (DeepPrint) transfer. All documented in `improvement-findings.md` §7.7.
 
+## Comparison with Blind-Touch (the prior neural approach, arXiv:2312.11575)
+Blind-Touch is the HE-based system we build on (same Siamese CNN / 16-D embedding). It matches
+on the *encrypted float* embedding via CKKS on a 3-server cluster; we match on a *binary code*
+via 2-party Fuzzy-Labelled PSI. Numbers from their paper vs this work:
+
+| | Blind-Touch (CKKS HE, 3 servers) | Neural-PSI (FLPSI, 2-party) — this work |
+|---|---|---|
+| SOCOFing EER | 0.7% | Round 1 0.87% · **Round 2 0.17%** |
+| PolyU EER | 2.5% | 11.7% (not comparable — see note) |
+| Communication @ N=5000 | **~856 KB** (compressed CKKS) | 7953 KB → **2377 KB** (Round 2) |
+| Latency @ N=5000 | ~650 ms (3-server cluster) | ~84 ms/query real-crypto (small N; not directly comparable) |
+| Trust / deployment | server does encrypted inference; needs a cluster | lightweight 2-party; reveals only the label on a match |
+
+**Honest reading:**
+- **Accuracy (SOCOFing):** we win — feature-head **0.17%** vs Blind-Touch **0.7%** (~4×), on the
+  same corpus and CNN family.
+- **Communication:** **Blind-Touch wins.** CKKS-with-compression (856 KB) is lower than our FLPSI
+  (2377 KB after Round 2). Our contribution cut *our own* comms 45%, narrowing the gap from ~9×
+  to ~2.8×, but PSI does not beat compressed HE on bandwidth. Frame our comms result as
+  "−45% vs our own baseline," **not** as beating Blind-Touch.
+- **PolyU:** not apples-to-apples — Blind-Touch trained a PolyU-specific extractor (2.5%); our
+  generality test reused a cross-modal-trained CNN. This actually reinforces our Round-2 finding
+  that on real corpora the *extractor*, not the code, is the bottleneck.
+- **Our real edge over Blind-Touch:** better SOCOFing accuracy **and** a simpler 2-party protocol
+  (no homomorphic-encryption cluster), with a different privacy model (label-only disclosure).
+
 ## Where it lives
 Branch `space2026-metric-aware-bridge`. Scripts `src/14`–`32`. Full detail in
 `improvement-findings.md` (§1–6 Round 1, §7 Round 2); next steps in `future-directions.md`.
