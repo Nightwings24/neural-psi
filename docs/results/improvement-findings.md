@@ -236,7 +236,36 @@ FRR 0.0%** at a secure query-FAR@5000 ≤ 1e-2 point (vs ortho 0.5%) but its 2-o
 (12.1% vs 5.2%); the σ-optimal variant is roughly neutral at 2-of-3 (4.3% vs 5.2%). Net: the
 single-finger EER and comms wins are robust; fusion is a tunable tradeoff, not a clean win.
 
-### 7.6 What did NOT work (measured negatives)
+### 7.6 Generality across corpora — the win is gap-dependent; the σ/comms benefit is universal
+Tested on two further **real** corpora `[MEASURED: 30_polyu_featurehead.py, 31_fvc_finetune.py @
+cdc9a9e]`. PolyU uses the PolyU-trained CNN; FVC2002 (SOCOFing CNN does not transfer, float
+22–38%) uses a CNN fine-tuned on pooled FVC train fingers. Finger-disjoint, gallery=1/probe=rest.
+
+| corpus (extractor) | float conv / 16-D | ortho-thermo EER | feature-head EER | σ (ortho→feat) |
+|---|---|---|---|---|
+| SOCOFing (SOCOFing CNN) | 0.16% / 0.33% | 0.87% [0.62,0.99] | **0.17% [0.06,0.26]** | 14.6 → 6.72 |
+| PolyU contactless | 17.4% / 15.9% | 12.38% [10.1,14.7] | 11.66% [10.0,13.2] | 14.0 → 7.65 |
+| PolyU contact | 25.6% / 21.5% | 19.18% [16.7,20.5] | 21.38% [19.5,23.8] | 13.0 → 7.27 |
+| FVC2002 Db1_a | 37.6% / 37.1% | 34.43% [32.2,37.7] | 29.82% [26.8,32.9] | 19.0 → 11.3 |
+| FVC2002 Db2_a | 40.8% / 38.8% | 36.87% [33.0,40.9] | 34.75% [32.1,37.9] | 18.2 → 6.75 |
+| FVC2002 Db3_a | 34.8% / 37.9% | 34.74% [31.6,38.0] | 27.61% [23.8,30.4] | 23.0 → 8.89 |
+| FVC2002 Db4_a | 38.8% / 31.0% | 25.30% [21.9,29.2] | 34.93% [31.1,38.3] | 20.2 → 6.90 |
+
+Two honest conclusions:
+1. **The impostor-σ collapse (better bit utilisation → the comms mechanism) is universal** — σ
+   roughly halves on every corpus (to ~6.7–11), independent of accuracy.
+2. **The EER gain is proportional to the quantization gap, not universal.** SOCOFing has a huge
+   gap (conv 0.16% ≪ 16-D 0.33% ≪ code 0.87%) → ~5× win. On PolyU/FVC the extractor is the
+   bottleneck (conv features are *not* better than the 16-D output, and absolute EER is 12–37%),
+   so there is little gap to close: feature-head wins clearly on FVC Db1/Db3, is a wash on PolyU
+   contactless/FVC Db2, and *loses* where conv features are degraded relative to 16-D (PolyU
+   contact, FVC Db4). FVC absolute EERs are poor because fine-tuning on ~65 fingers is
+   data-starved, not a flaw of the quantizer. **Framing for the paper: the contribution is a
+   method that (a) closes the quantization gap wherever one exists — dramatic on a high-fidelity
+   corpus — and (b) universally tightens the code toward the uniform ideal (the comms lever); the
+   5× headline is SOCOFing's best case, not a claim of 5× everywhere.**
+
+### 7.7 What did NOT work (measured negatives)
 - **End-to-end fine-tuning of the CNN** (`24_qat_e2e.py`) degrades monotonically — perturbing
   the converged embedding destroys discriminability faster than the code objective repairs it.
 - **Forcing balance via a BCE separation loss** on the 16-D embedding *inflates* σ (14.6→18.6)
@@ -248,5 +277,6 @@ Round 1: `train_gpu_224.py --emb-dim`; scripts `src/14`–`21`. Round 2: `src/22
 diagnostic), `src/23` (frozen QAT head, whiten/BCE, optional nonlinear residual), `src/24`
 (end-to-end co-design — negative), `src/25` (operating-point + comms via the real `simulation`
 binary), `src/26` (fusion on a learned code), `src/27` (real-crypto validation, T passed
-explicitly), `src/28` (feature-head QAT — the headline). Large model/array artifacts are
-regenerable and left uncommitted.
+explicitly), `src/28` (feature-head QAT — the headline), `src/29` (accuracy ladder), `src/30`
+(PolyU generality), `src/31` (FVC2002 fine-tune + generality). FVC2002 (full A-sets, CC0) on
+`/mnt/SharedData/fvc/`. Large model/array artifacts are regenerable and left uncommitted.
