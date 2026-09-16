@@ -273,6 +273,19 @@ transfer across sensors/corpora (and the publicly available checkpoint is the no
 variant). So there is no quantization gap to exploit on the real corpora regardless of backbone;
 the cross-corpus domain gap in fingerprint recognition is the binding constraint, not our code.
 
+**PolyU same-sensor retry (matching Blind-Touch's protocol).** Blind-Touch reports 2.5% EER on
+contactless-2D PolyU with a per-dataset-tuned CNN (150 epochs, 296 train / 200 test subjects,
+all-pairs eval). We tuned a same-sensor PolyU extractor to match `[MEASURED:
+33_polyu_samesensor_train.py, 34_polyu_allpairs.py @ cdc9a9e]`: 150 epochs, all-pairs float EER
+reached **11.6%** (16-D) — better than our 60-epoch run (~17%) but still ~5× their 2.5%. The
+residual gap is data we do not have (their 296 train subjects need PolyU session-2's 160
+subjects; our copy has only session-1's 336, giving a 219-finger train split) plus their exact
+preprocessing/split. Crucially, even with the tuned extractor the feature-head does **not** win
+on PolyU (ortho-thermo 12.15% vs feature-head 13.17%) because conv features there are *not*
+richer than the 16-D output (16.9% vs 13.3%) — no quantization gap. σ still halves (17.4 → 11.7).
+Net: reinforces the gap-dependence conclusion; PolyU is not an accuracy-headline corpus for this
+method under the data we hold.
+
 ### 7.7 What did NOT work (measured negatives)
 - **Pretrained-backbone transfer** (DeepPrint → PolyU/FVC, §7.6) — near-chance features, no gap.
 - **End-to-end fine-tuning of the CNN** (`24_qat_e2e.py`) degrades monotonically — perturbing
@@ -288,5 +301,6 @@ diagnostic), `src/23` (frozen QAT head, whiten/BCE, optional nonlinear residual)
 binary), `src/26` (fusion on a learned code), `src/27` (real-crypto validation, T passed
 explicitly), `src/28` (feature-head QAT — the headline), `src/29` (accuracy ladder), `src/30`
 (PolyU generality), `src/31` (FVC2002 fine-tune + generality), `src/32` (pretrained-DeepPrint
-generality probe — negative). FVC2002 (full A-sets, CC0) on `/mnt/SharedData/fvc/`. Large
-model/array artifacts are regenerable and left uncommitted.
+generality probe — negative), `src/33` (same-sensor PolyU tuning), `src/34` (all-pairs PolyU
+EER vs Blind-Touch). FVC2002 (full A-sets, CC0) on `/mnt/SharedData/fvc/`. Large model/array
+artifacts are regenerable and left uncommitted.
