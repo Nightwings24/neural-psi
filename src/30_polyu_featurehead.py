@@ -53,7 +53,7 @@ def code_eer_ci(cg, cp, pf, gfids, B=300, seed=0):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--modality", default="cless", choices=["cless", "contact"])
+    ap.add_argument("--modality", default="cless")
     ap.add_argument("--ckpt", default="feature_model_polyu_d16.pt")
     ap.add_argument("--pca", type=int, default=512)
     ap.add_argument("--epochs", type=int, default=400)

@@ -28,7 +28,7 @@ def augment(u8):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--modality", default="cless", choices=["cless", "contact"])
+    ap.add_argument("--modality", default="cless")
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--lr", type=float, default=2e-4)

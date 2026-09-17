@@ -286,6 +286,17 @@ richer than the 16-D output (16.9% vs 13.3%) — no quantization gap. σ still h
 Net: reinforces the gap-dependence conclusion; PolyU is not an accuracy-headline corpus for this
 method under the data we hold.
 
+**Full-protocol reproduction attempt (both sessions, 496 subjects).** Adding PolyU session-2
+(160 subjects) to match Blind-Touch exactly — 296 train / 200 test, 150 epochs, all-pairs eval
+(exactly their 3,000 genuine / 19,900 impostor pairs) `[MEASURED: 35_extract_polyu_2sess.py,
+33, 34 @ cdc9a9e]` — still gives **10.87% 16-D float EER, ~4× their 2.5%** (session-2 barely
+helped: 11.6% → 10.87%, so it is not a data-quantity gap). Data, epochs and eval protocol are
+now matched; the residual gap is their preprocessing (ROI segmentation/enhancement) or
+architecture detail, not reproducible from the paper. Feature-head still loses on this corpus
+(ortho 12.21% vs feature-head 15.72%) because conv features (20.4%) are worse than the 16-D
+output (14.1%) — no quantization gap. Conclusion stands: the accuracy win needs a high-fidelity
+corpus; PolyU under our reproduction is not one.
+
 ### 7.7 What did NOT work (measured negatives)
 - **Pretrained-backbone transfer** (DeepPrint → PolyU/FVC, §7.6) — near-chance features, no gap.
 - **End-to-end fine-tuning of the CNN** (`24_qat_e2e.py`) degrades monotonically — perturbing
@@ -302,5 +313,6 @@ binary), `src/26` (fusion on a learned code), `src/27` (real-crypto validation, 
 explicitly), `src/28` (feature-head QAT — the headline), `src/29` (accuracy ladder), `src/30`
 (PolyU generality), `src/31` (FVC2002 fine-tune + generality), `src/32` (pretrained-DeepPrint
 generality probe — negative), `src/33` (same-sensor PolyU tuning), `src/34` (all-pairs PolyU
-EER vs Blind-Touch). FVC2002 (full A-sets, CC0) on `/mnt/SharedData/fvc/`. Large model/array
+EER vs Blind-Touch), `src/35` (PolyU both-sessions extract). FVC2002 (full A-sets, CC0) on
+`/mnt/SharedData/fvc/`. Large model/array
 artifacts are regenerable and left uncommitted.
