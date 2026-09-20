@@ -297,6 +297,15 @@ architecture detail, not reproducible from the paper. Feature-head still loses o
 output (14.1%) — no quantization gap. Conclusion stands: the accuracy win needs a high-fidelity
 corpus; PolyU under our reproduction is not one.
 
+A preprocessing attempt (CLAHE contrast enhancement + variance-based ROI segmentation +
+aspect-preserving resize, `src/36_extract_polyu_seg.py`, retrained 150 ep) made the float EER
+**worse**, 10.87% → 15.07% `[MEASURED @ cdc9a9e]` — naive enhancement amplifies fingerphoto
+noise and inconsistent ROI crops misalign a finger's samples. The gap to Blind-Touch's 2.5% is
+therefore attributable to their full **Lin & Kumar RTPS ridge alignment/unwarping** pipeline
+(TIP 2018), a substantial ML/CV preprocessing effort orthogonal to this work's crypto/quantizer
+contribution and out of scope. PolyU-vs-Blind-Touch accuracy reproduction is closed here at
+10.87% float; the quantizer findings are unaffected.
+
 ### 7.7 What did NOT work (measured negatives)
 - **Pretrained-backbone transfer** (DeepPrint → PolyU/FVC, §7.6) — near-chance features, no gap.
 - **End-to-end fine-tuning of the CNN** (`24_qat_e2e.py`) degrades monotonically — perturbing
@@ -313,6 +322,7 @@ binary), `src/26` (fusion on a learned code), `src/27` (real-crypto validation, 
 explicitly), `src/28` (feature-head QAT — the headline), `src/29` (accuracy ladder), `src/30`
 (PolyU generality), `src/31` (FVC2002 fine-tune + generality), `src/32` (pretrained-DeepPrint
 generality probe — negative), `src/33` (same-sensor PolyU tuning), `src/34` (all-pairs PolyU
-EER vs Blind-Touch), `src/35` (PolyU both-sessions extract). FVC2002 (full A-sets, CC0) on
+EER vs Blind-Touch), `src/35` (PolyU both-sessions extract), `src/36` (PolyU CLAHE+ROI preprocess — negative).
+FVC2002 (full A-sets, CC0) on
 `/mnt/SharedData/fvc/`. Large model/array
 artifacts are regenerable and left uncommitted.
