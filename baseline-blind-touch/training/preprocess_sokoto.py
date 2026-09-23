@@ -5,7 +5,7 @@ training notebook expects.
 
 This step is NOT in the upstream repo or the implementation guide, but the
 training notebook does `np.load(SOKOTO_DATA_PATH) / 255.` on a preprocessed
-array — Kaggle only gives you raw .BMP files, so something has to build it.
+array - Kaggle only gives you raw .BMP files, so something has to build it.
 
 Run this INSIDE the client container (it has opencv + numpy), after the
 SOCOFing dataset is mounted at /workspace/dataset:

@@ -1,5 +1,5 @@
 """
-Step 10 (§7.6): quantisation-dimension ablation — EER vs Super-Bit code length d.
+Step 10 (§7.6): quantisation-dimension ablation - EER vs Super-Bit code length d.
 
 Justifies the d=128 choice: sweep d in {64,128,256} (Super-Bit = ceil(d/16) orthonormalised
 16x16 blocks), encode the SAME held-out test fingers, and report EER / d-prime / Hamming.
@@ -101,7 +101,7 @@ def main():
     # ---- report ----
     rep = os.path.abspath(os.path.join(HERE, "..", "docs", "results", "dimension-ablation.md"))
     with open(rep, "w") as f:
-        f.write("# §7.6 Quantisation-dimension ablation — EER vs Super-Bit code length d\n\n")
+        f.write("# §7.6 Quantisation-dimension ablation - EER vs Super-Bit code length d\n\n")
         f.write("Same open-set protocol as the EER ladder (held-out identities, Real enroll vs Altered-Easy\n")
         f.write("probe). Super-Bit = ceil(d/16) orthonormalised 16x16 blocks; plain (no whitening); 224 model.\n\n")
         f.write("| d (bits) | Super-Bit blocks | storage B/user | EER | genuine H | impostor H | d-prime | bit-balance |\n")

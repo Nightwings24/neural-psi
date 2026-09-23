@@ -70,7 +70,7 @@
     <h1>Neural-PSI</h1>
     <p class="lede">Privacy-preserving fingerprint authentication: a neural encoder turns a print
       into a 128-bit code, and two parties decide "close enough" through Fuzzy-Labelled Private
-      Set Intersection — the server learns only a label on a match, and neither side reveals its
+      Set Intersection - the server learns only a label on a match, and neither side reveals its
       fingerprints.</p>
   </header>
 
@@ -84,7 +84,7 @@
       </defs>
 
       <!-- ============ STAGE 1: ENCODE ============ -->
-      <text x="24" y="30" class="sec">1 · ENCODE — public map, identical at enrollment &amp; query</text>
+      <text x="24" y="30" class="sec">1 · ENCODE - public map, identical at enrollment &amp; query</text>
 
       <!-- boxes -->
       <rect class="data" x="24"  y="52" width="120" height="78" rx="8"/>
@@ -121,16 +121,16 @@
 
       <!-- contribution bracket under PCA+QAT -->
       <path class="brk" d="M516,140 v8 h368 v-8"/>
-      <text x="700" y="166" text-anchor="middle" class="lab-c">the binariser — our contribution</text>
+      <text x="700" y="166" text-anchor="middle" class="lab-c">the binariser - our contribution</text>
       <text x="700" y="182" text-anchor="middle" class="sub">R1 metric-aware bridge  →  R2 quantization-aware feature-head</text>
 
       <!-- reuse connectors: code feeds both parties -->
       <path class="reuse" d="M991,130 V206 H184 V300" marker-end="url(#ah)"/>
       <path class="reuse" d="M991,206 H944 V300" marker-end="url(#ah)"/>
-      <text x="600" y="200" text-anchor="middle" class="alab">same code — client computes online (b_q); server precomputes at enrollment (×N)</text>
+      <text x="600" y="200" text-anchor="middle" class="alab">same code - client computes online (b_q); server precomputes at enrollment (×N)</text>
 
       <!-- ============ STAGE 2: MATCH ============ -->
-      <text x="24" y="256" class="sec">2 · MATCH — Fuzzy-Labelled PSI · 2-party, semi-honest</text>
+      <text x="24" y="256" class="sec">2 · MATCH - Fuzzy-Labelled PSI · 2-party, semi-honest</text>
 
       <!-- client -->
       <rect class="mod" x="24" y="300" width="320" height="150" rx="10"/>
@@ -154,7 +154,7 @@
       <text x="796" y="330" class="lab">Server</text>
       <text x="796" y="360" class="sub">gallery { (labelᵢ, bᵢ) }</text>
       <text x="796" y="380" class="sub">i = 1..N  ·  kept private</text>
-      <text x="796" y="416" class="alab">enrolled codes only —</text>
+      <text x="796" y="416" class="alab">enrolled codes only -</text>
       <text x="796" y="431" class="alab">no raw prints stored</text>
 
       <!-- interaction arrows -->
@@ -167,12 +167,12 @@
       <line class="flow" x1="560" y1="450" x2="560" y2="478" marker-end="url(#ah)"/>
       <rect class="data" x="392" y="480" width="336" height="44" rx="8"/>
       <text x="560" y="500" text-anchor="middle" class="lab">revealed to client:  label ℓ  or  ⊥</text>
-      <text x="560" y="516" text-anchor="middle" class="sub">a match returns only its label — nothing else leaks</text>
+      <text x="560" y="516" text-anchor="middle" class="sub">a match returns only its label - nothing else leaks</text>
     </svg>
 
     <figcaption>The binariser (PCA + quantization-aware head) is where both project iterations act
       and where accuracy and communication are jointly decided: it sets the code's Hamming
-      distribution, which the PSI's <code>w</code>-of-128, <code>T</code>-draw accept rule reads —
+      distribution, which the PSI's <code>w</code>-of-128, <code>T</code>-draw accept rule reads -
       so a tighter code lowers EER and the subsample count <code>T</code> at once.</figcaption>
   </figure>
 
@@ -186,6 +186,6 @@
   <p class="note"><b>Public vs private.</b> The CNN, PCA map and QAT-head weights are <b>public</b>
     (published, same for everyone). The fingerprints and the 128-bit codes are <b>private</b>: they
     never leave a party in the clear, and the protocol discloses only the matching label on a
-    close-enough match — or <code>⊥</code> otherwise. Multi-finger fusion (not shown) runs several
+    close-enough match - or <code>⊥</code> otherwise. Multi-finger fusion (not shown) runs several
     codes through the same matcher and accepts on a quorum.</p>
 </div>

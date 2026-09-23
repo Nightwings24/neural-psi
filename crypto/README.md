@@ -1,4 +1,4 @@
-# Cryptographic backend — flash-psi additions
+# Cryptographic backend - flash-psi additions
 
 The Fuzzy-Labelled PSI protocol we use is **not our code**. It is the reference implementation
 accompanying:

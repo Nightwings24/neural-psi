@@ -1,4 +1,4 @@
-# Blind-Touch demo — setup notes & deviations from the guide
+# Blind-Touch demo - setup notes & deviations from the guide
 
 This 3-container demo (`client` + `main` + `cluster1`) runs the **real repo code**
 (Flask + HTTP + SEAL), not the guide's notebook-only server model. Below is every
@@ -6,13 +6,13 @@ place reality differed from `blind-touch-implementation-guide.md`, and what was 
 
 ## Architecture
 - The guide assumes the server is a Jupyter notebook watching a shared volume.
-  **Reality:** the server is Flask apps — `server/main/` + `server/cluster1..3/` —
+  **Reality:** the server is Flask apps - `server/main/` + `server/cluster1..3/` -
   that talk over HTTP on port 8090. There is no server notebook in the repo.
 - We run **main + 1 cluster** (chosen for RAM headroom). `main/service.py` was
   trimmed from 3 clusters to 1: `urls = ['http://cluster1:8090/blindtouch']` and
   `result = ctxt1` instead of `add_many([ctxt1,ctxt2,ctxt3])`.
 
-## Config paths (were placeholder strings in the repo — all filled in)
+## Config paths (were placeholder strings in the repo - all filled in)
 Shared volume `shared_ckks` is mounted at `/workspace/shared_data` in every container:
 - `keys/`        public.key, secret.key (client only), galois.key, relin.key
 - `models/`      feature_model, model  (TF SavedModel dirs, from training)
@@ -43,9 +43,9 @@ Edited: `server/main/app.py`, `server/main/service.py`, `server/cluster1/conf.py
   (`http://main:8090/blindtouch`).
 
 ## Notebook fixes (training)
-- **Epochs reduced 150 -> 15.** 150 epochs on CPU is impractical (hours–days; the
-  guide's "10–30 min" is wrong). Raise `EPOCHS` if you have a GPU. Accuracy will be
-  low at 15 — fine for demonstrating the HE pipeline, not for real matching.
+- **Epochs reduced 150 -> 15.** 150 epochs on CPU is impractical (hours-days; the
+  guide's "10-30 min" is wrong). Raise `EPOCHS` if you have a GPU. Accuracy will be
+  low at 15 - fine for demonstrating the HE pipeline, not for real matching.
 - Wired data path, model save paths, testset save path.
 
 ## Added: dataset preprocessing
@@ -54,7 +54,7 @@ Edited: `server/main/app.py`, `server/main/service.py`, `server/cluster1/conf.py
   guide included this step. Run it in the client container before training.
 
 ## Still required from you
-- **Docker** must be installed (needs sudo — see the install block).
+- **Docker** must be installed (needs sudo - see the install block).
 - **kaggle.json** at `~/.kaggle/kaggle.json` to download SOCOFing, OR drop the
   dataset under `~/blindtouch-demo/dataset/SOCOFing/Real/` manually.
 

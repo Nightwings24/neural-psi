@@ -1,5 +1,5 @@
 """
-Week 1 — Step 5: Export REAL fingerprint codes for the real flash-psi protocol.
+Week 1 - Step 5: Export REAL fingerprint codes for the real flash-psi protocol.
 
 Builds input files for flash-psi/src/bin/fingerprint.rs from real held-out
 SOCOFing identities, for BOTH bridges (ITQ and naive sign), and for BOTH a

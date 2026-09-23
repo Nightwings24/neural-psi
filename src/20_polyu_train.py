@@ -1,5 +1,5 @@
 """
-Step 20: PolyU cross-sensor training + evaluation (E4 proper — not zero-shot).
+Step 20: PolyU cross-sensor training + evaluation (E4 proper - not zero-shot).
 
 Trains a Siamese CNN on PolyU with GENUINE pairs = (contact, contactless) of the SAME finger
 and impostor pairs = different fingers, on a finger-disjoint train split. Then evaluates the
@@ -8,7 +8,7 @@ Reports float EER, Super-Bit-128 EER, L2-thermometer EER, impostor sd, H=0 colli
 
 This tests whether (a) the system works at all under a real sensor change when properly
 trained, and (b) the collision-floor / metric-mismatch phenomena reproduce on a second,
-genuinely different corpus — the generalization the SOCOFing-only results cannot claim.
+genuinely different corpus - the generalization the SOCOFing-only results cannot claim.
 
 Run (after the GPU dim-sweep frees the card):
   python3 20_polyu_train.py --emb-dim 16 --epochs 120 --batch 64

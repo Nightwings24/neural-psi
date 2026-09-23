@@ -1,4 +1,4 @@
-# Real-crypto head-to-head — Super-Bit vs L2-thermometer bridge
+# Real-crypto head-to-head - Super-Bit vs L2-thermometer bridge
 
 Both bridges' codes for the SAME 100 held-out fingers pushed through the actual flash-psi
 binary (masked-OPRF+GC+VOLE+Shamir). Op-point w=14, t=2, T=64, d=128.

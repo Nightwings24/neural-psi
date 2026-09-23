@@ -1,4 +1,4 @@
-# Blind-Touch — Clarifications
+# Blind-Touch - Clarifications
 
 A Q&A companion to the main docs, capturing the conceptual questions worked through
 about how this demo actually does homomorphic-encryption (HE) fingerprint matching.
@@ -25,7 +25,7 @@ CKKS encrypts a *vector* of **8192 slots** (`slot_count = poly_modulus_degree/2 
 So one ciphertext holds 512 templates, and one homomorphic evaluation produces 512
 scores in parallel. That batching is the whole performance trick.
 
-- `clustering_ctxt` (loaded from `ctxt1`) = the enrolled gallery — 512 templates.
+- `clustering_ctxt` (loaded from `ctxt1`) = the enrolled gallery - 512 templates.
 - `target_enc` = the client's query feature vector, replicated across all 512 blocks so
   every template is compared to the same probe.
 
@@ -36,17 +36,17 @@ sub_ctxt = evaluator.sub(ctxt, clustering_ctxt)                 # (1) query − 
 result   = fc1_layer(evaluator, square(evaluator, sub_ctxt))    # (2) + (3)
 ```
 
-1. **Difference** — `sub` gives `q − t` for all 8192 slots (all 512 templates) in one op.
-2. **Square** (`square()`) — `multiply(ctxt, ctxt)` + relinearize → element-wise
+1. **Difference** - `sub` gives `q − t` for all 8192 slots (all 512 templates) in one op.
+2. **Square** (`square()`) - `multiply(ctxt, ctxt)` + relinearize → element-wise
    `(q − t)²`. Double duty: it's the **squared-distance** term *and* the HE-friendly
    polynomial activation. (CKKS can't do ReLU/swish, so the network was trained with a
    custom `square` activation precisely so it can be evaluated under encryption.)
-3. **Learned scoring layer** (`fc1_layer()`) — turns the 16 squared-differences in each
+3. **Learned scoring layer** (`fc1_layer()`) - turns the 16 squared-differences in each
    block into one match score:
    - Multiply by the **trained final-dense-layer weights** (`model.get_weights()[32]`,
      replicated ×512 so every block uses the same learned weights). Now each slot holds
      `wᵢ·(qᵢ−tᵢ)²`.
-   - **Rotation-sum**: rotate by 1, 2, 4, 8 and add each time — a log-reduction that
+   - **Rotation-sum**: rotate by 1, 2, 4, 8 and add each time - a log-reduction that
      accumulates all 16 slots of a block into the block's first slot →
      `Σᵢ wᵢ(qᵢ−tᵢ)²`, one weighted squared-distance per identity.
    - **Add bias** (`model.get_weights()[33]`).
@@ -62,7 +62,7 @@ The trained weights/bias were fit so a genuine match scores near 1 and impostors
 ### Plumbing you can ignore conceptually
 
 `rescale_to_next_inplace`, `mod_switch_to_inplace`, `relinearize_inplace` are **not**
-part of the comparison — they're CKKS bookkeeping (keeping ciphertext scales aligned and
+part of the comparison - they're CKKS bookkeeping (keeping ciphertext scales aligned and
 managing the noise/modulus budget after each multiply). The final
 `rotate_vector(result, -(CLUSTER_NUM-1))` is a **no-op** in this demo (`CLUSTER_NUM=1`);
 it only matters when stitching multiple clusters' partial results.
@@ -70,24 +70,24 @@ it only matters when stitching multiple clusters' partial results.
 ### What goes back to the client
 
 `cluster1` saves the encrypted result; `main`'s `start_clustering` just forwards it (with
-3 clusters it would `add_many` the partials). **The server never decrypts** — it holds
+3 clusters it would `add_many` the partials). **The server never decrypts** - it holds
 only the public / galois / relin keys, no secret key.
 
 ---
 
-## 2. ELI5 — what happens when a person X gives their fingerprint?
+## 2. ELI5 - what happens when a person X gives their fingerprint?
 
 Analogy: X's fingerprint becomes a **secret padlocked box** only X can open.
 
 1. **X presses the scanner (client).** The trained neural net turns the fingerprint image
-   into a short list of **16 numbers** — the fingerprint's "essence." The image itself is
+   into a short list of **16 numbers** - the fingerprint's "essence." The image itself is
    discarded.
 2. **The client locks those 16 numbers in a box (encryption).** CKKS scrambles them into a
-   ciphertext. Only X's **secret key** can open it — and the client never gives that key away.
+   ciphertext. Only X's **secret key** can open it - and the client never gives that key away.
 3. **The locked box is mailed to the server** (`target_enc`). The server holds it but
-   **cannot see inside** — no secret key. It's gibberish to the server.
+   **cannot see inside** - no secret key. It's gibberish to the server.
 4. **The server compares boxes without opening them (the magic).** The server has a shelf
-   of locked boxes — one per enrolled person (512). HE lets it do math on locked boxes so
+   of locked boxes - one per enrolled person (512). HE lets it do math on locked boxes so
    the answer comes out as a *new locked box*. For everyone it computes
    "how different is X's box from this person's?" (subtract → square → learned score). Out
    pops a locked box of **similarity scores**, computed **blindfolded**.
@@ -107,7 +107,7 @@ locked boxes and no key. The fingerprints never exist in readable form outside t
 
 ## 3. Does the server send back all 512 score boxes?
 
-**No — it sends back exactly ONE box,** which has 512 compartments inside it.
+**No - it sends back exactly ONE box,** which has 512 compartments inside it.
 
 CKKS doesn't lock one number in a box; it locks a **whole vector of 8192 slots** in a
 single ciphertext. The server arranged all 512 comparisons into different slots of that
@@ -126,8 +126,8 @@ At the client:
 | Open 512 boxes | **1 decryption** |
 | 512 scores | 512 scores **packed in the slots of that one box** |
 
-This is *why* it's fast: one subtract, one square, one weighted-sum — each hitting all
-8192 slots at once (SIMD) — compares against all 512 people simultaneously, and the whole
+This is *why* it's fast: one subtract, one square, one weighted-sum - each hitting all
+8192 slots at once (SIMD) - compares against all 512 people simultaneously, and the whole
 answer comes home in a single ciphertext.
 
 *Footnote:* with 3 clusters the gallery is split across them and `main` `add_many`s the
@@ -140,11 +140,11 @@ three partial boxes into one before sending. In this 3-container demo there's on
 
 Because **the containers don't use that folder.**
 
-- The host folder `./shared_data/` is leftover scaffolding (empty subdirs) — vestigial.
+- The host folder `./shared_data/` is leftover scaffolding (empty subdirs) - vestigial.
 - The real data lives in a Docker **named volume** `shared_ckks`, mounted at
   `/workspace/shared_data` inside every container (`docker-compose.yml`).
 
-A named volume is **not** a host bind-mount — Docker stores it under
+A named volume is **not** a host bind-mount - Docker stores it under
 `/var/lib/docker/volumes/blindtouch-demo_shared_ckks/_data`, not in the project folder. So
 container writes go to the volume and `./shared_data/` stays empty forever.
 
@@ -165,7 +165,7 @@ results/      clustering_1 + compressed
 | Where on disk | the project folder | `/var/lib/docker/volumes/…` |
 
 To make the files appear in the project folder, switch the compose mounts from the named
-volume to a bind-mount (`./shared_data:/workspace/shared_data`). Optional — the demo works
+volume to a bind-mount (`./shared_data:/workspace/shared_data`). Optional - the demo works
 as-is.
 
 ---
@@ -197,9 +197,9 @@ shared disk* → `docs/` + `report/` *explain and record what happened*.
 | Path | Role |
 |---|---|
 | `training/Blind-Touch-Training-SampleNotebook(SOKOTO).ipynb` | The notebook actually trained with (150 epochs, val_acc 0.9958). |
-| `training/Blind-Touch-Training-SampleNotebook(PolyU).ipynb` | Alternate dataset version — unused. |
+| `training/Blind-Touch-Training-SampleNotebook(PolyU).ipynb` | Alternate dataset version - unused. |
 | `training/preprocess_sokoto.py` | Raw BMPs → `sokoto_real_224.npy`. |
-| `dataset/SOCOFing/` | ~844 MB, 55,270 BMP fingerprints (Real + Altered) — raw SOCOFing dataset (git-ignored; download from Kaggle). |
+| `dataset/SOCOFing/` | ~844 MB, 55,270 BMP fingerprints (Real + Altered) - raw SOCOFing dataset (git-ignored; download from Kaggle). |
 
 ### Data store
 | Path | Role |
@@ -210,7 +210,7 @@ shared disk* → `docs/` + `report/` *explain and record what happened*.
 | File | Role |
 |---|---|
 | `README.md` | Project overview and quickstart (the front door). |
-| `docs/how-it-works.md` | This doc — conceptual Q&A. |
+| `docs/how-it-works.md` | This doc - conceptual Q&A. |
 | `docs/architecture.md` | Plain-language architecture write-up. |
 | `docs/reproduce.md` | Step-by-step reproduce / recovery commands. |
 | `docs/setup-notes.md` | Every deviation from the upstream guide and why. |
@@ -220,4 +220,4 @@ shared disk* → `docs/` + `report/` *explain and record what happened*.
 | `report/assets/ev_*.txt` | Captured console evidence (training / servers / auth) embedded in the report. |
 
 > Run logs from the reproduction (`*.log`) and the trained models / keys / ciphertexts are
-> **not** committed — they live in the Docker volume or are git-ignored. See [`.gitignore`](../.gitignore).
+> **not** committed - they live in the Docker volume or are git-ignored. See [`.gitignore`](../.gitignore).

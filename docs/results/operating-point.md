@@ -26,37 +26,37 @@ No resampling, no Monte-Carlo noise. As a check on the arithmetic, `q(8) = C(120
 same expressions against a uniform-code model reproduces the published per-record FAR of
 2.95e-5 exactly.
 
-## Result 1 — the codes are balanced but not uniform
+## Result 1 - the codes are balanced but not uniform
 
 | | uniform model | measured |
 |---|---|---|
 | impostor mean `H` | 64.0 | **64.0** |
 | impostor sd | 5.66 | **20.22** |
 | impostor min | ~40 (never observed) | **0** |
-| genuine mean `H` | — | 8.3 (sd 5.67, max 34) |
+| genuine mean `H` | - | 8.3 (sd 5.67, max 34) |
 
 The mean is *exactly* right. The quantiser's balancing step guarantees it, so **no
-first-moment check can detect the problem** — a sanity test that only verifies "impostor
+first-moment check can detect the problem** - a sanity test that only verifies "impostor
 codes look like coin flips on average" passes cleanly. The failure lives entirely in the
 second moment and the tail: the standard deviation is **3.6× larger** than the model
 assumes.
 
 The cause is structural. A 128-bit Super-Bit code is 128 projections of a
 **16-dimensional** embedding, so it has roughly 16 real degrees of freedom, not 128. The
-LSH bridge is faithful — `E[H]/d = arccos(cos-sim)/π` holds — and *that faithfulness is
+LSH bridge is faithful - `E[H]/d = arccos(cos-sim)/π` holds - and *that faithfulness is
 the problem*: it transmits the embedding's angular distribution intact, including the
 fact that some fingers genuinely look alike.
 
-## Result 2 — the published operating point is off by three orders of magnitude
+## Result 2 - the published operating point is off by three orders of magnitude
 
 At the published parameters (`d=128, T=64, w=14, θ=2`, error-free sub-samples):
 
 | quantity | uniform model | measured | ratio |
 |---|---|---|---|
 | per-record FAR | 2.954e-05 | **4.578e-02** | **1,550×** |
-| FRR | — | 9.61e-03 | — |
+| FRR | - | 9.61e-03 | - |
 
-## Result 3 — a per-record FAR is not a security boundary
+## Result 3 - a per-record FAR is not a security boundary
 
 A 1:N identification query is compared against every enrolled record, so the rate that
 matters is `FAR_query = 1 − (1−FAR)^N`:
@@ -70,7 +70,7 @@ system, not an identification system**: at N=1 a 4.6% FAR is poor but coherent; 
 **N=100** the query-level FAR already exceeds 50%, and at the N=5,000 scale the paper
 claimed, an impostor is accepted essentially with certainty.
 
-## Result 4 — retuning (w, t, θ) does not repair it
+## Result 4 - retuning (w, t, θ) does not repair it
 
 Sweeping 6,848 combinations of `w ∈ {8…64}`, `t ∈ {0…8}`, `θ ∈ {1…64}` and keeping only
 points whose FAR estimate is supported by the histogram (less than half the FAR mass from
@@ -79,16 +79,16 @@ bins holding fewer than 10 observed pairs):
 | query-FAR target at N=5,000 | best point | FRR |
 |---|---|---|
 | ≤ 1e-1 | w=56, t=1, θ=40 | **84.8%** |
-| ≤ 1e-2 | unreachable | — |
-| ≤ 1e-3 | unreachable | — |
-| ≤ 1e-4 | unreachable | — |
+| ≤ 1e-2 | unreachable | - |
+| ≤ 1e-3 | unreachable | - |
+| ≤ 1e-4 | unreachable | - |
 
 The only point that even reaches a 10% query FAR rejects 85% of legitimate users. This is
 not a tuning problem.
 
-## Result 5 — why: an irreducible collision floor
+## Result 5 - why: an irreducible collision floor
 
-**8 of the 2,877,600 impostor pairs have Hamming distance exactly 0** — different fingers
+**8 of the 2,877,600 impostor pairs have Hamming distance exactly 0** - different fingers
 producing *identical* 128-bit codes.
 
 ```
@@ -103,24 +103,24 @@ propagates:
 | N | 100 | 1,000 | 5,000 | 10,000 |
 |---|---|---|---|---|
 | irreducible `FAR_query` | 0.0003 | 0.0028 | **0.0138** | 0.0274 |
-| 95% CI | — | [0.001, 0.006] | [0.006, 0.027] | [0.012, 0.053] |
+| 95% CI | - | [0.001, 0.006] | [0.006, 0.027] | [0.012, 0.053] |
 
 This is exactly why the ladder in Result 4 goes unreachable below 1e-2: at N=5,000 the
-floor alone is 1.4%. The near tail is dense too — 1.03e-3 of impostor pairs sit at
+floor alone is 1.4%. The near tail is dense too - 1.03e-3 of impostor pairs sit at
 `H ≤ 10`, and 2.80e-2 at `H ≤ 25`, which is the *99th percentile of the genuine
 distribution*. The genuine and impostor distributions genuinely overlap; the protocol is
 being asked to separate distributions that are not separable.
 
 **The bound is a property of the code, not of the protocol.** It can only be moved by
-producing better codes — a higher-dimensional or better-trained embedding, or more
+producing better codes - a higher-dimensional or better-trained embedding, or more
 independent evidence.
 
-## Result 6 — multi-finger fusion is the lever that works
+## Result 6 - multi-finger fusion is the lever that works
 
 Each finger is an independent enrolment, so `k`-of-`K` fusion multiplies evidence rather
 than trading FAR against FRR along a single curve. Measured over **201 held-out subjects
 contributing ≥3 fingers each**, using a Poisson-binomial over the real per-finger accept
-probabilities — so correlation between one person's own fingers is carried by the data,
+probabilities - so correlation between one person's own fingers is carried by the data,
 not assumed away:
 
 | parameters | rule | per-record FAR | `FAR_query` @ N=5,000 | FRR |
@@ -132,8 +132,8 @@ not assumed away:
 | w=24, θ=2 | 2-of-3 | 2.45e-04 | 0.707 | 0.033 |
 | **w=24, θ=2** | **3-of-3** | **1.30e-06** | **0.0065** | **0.281** |
 
-Fusion buys four orders of magnitude on per-record FAR — far more than any single-finger
-retuning — and it is the *only* mechanism here that gets below the single-finger collision
+Fusion buys four orders of magnitude on per-record FAR - far more than any single-finger
+retuning - and it is the *only* mechanism here that gets below the single-finger collision
 floor, because three fingers must collide simultaneously.
 
 But it is not sufficient on its own: the best measured configuration still costs a **28%

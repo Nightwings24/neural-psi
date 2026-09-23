@@ -12,7 +12,7 @@ finger-identities -> cross-entropy. After training, the SAME FeatureModel produc
 embedding the quantizer consumes; the head metric weights w1 for whitening are recovered
 post-hoc with recover_head_w1.py (works for any embedding).
 
-GPU: auto-uses CUDA + AMP if available; falls back to CPU (slow at 224 — use --smoke to verify).
+GPU: auto-uses CUDA + AMP if available; falls back to CPU (slow at 224 - use --smoke to verify).
 Data: loads x_real_<img>.npy / x_probe_<img>.npy if present, else x_real.npy (96px). Each finger
 is a class; its Real + Altered-Easy prints (+ augmentation) are the samples.
 
@@ -75,7 +75,7 @@ class ArcMarginHead(nn.Module):
         self.s, self.m, self.mode = s, m, mode
 
     def cosine(self, e):
-        """Plain cosine similarity to each class weight (no margin) — for the accuracy metric."""
+        """Plain cosine similarity to each class weight (no margin) - for the accuracy metric."""
         return F.linear(F.normalize(e), F.normalize(self.W))
 
     def forward(self, e, labels):
@@ -111,7 +111,7 @@ def main():
     np.random.seed(args.seed); torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_amp = device == "cuda"
-    print(f"[train] device={device}{'' if use_amp else ' (NO GPU — slow at 224; use --smoke)'} | "
+    print(f"[train] device={device}{'' if use_amp else ' (NO GPU - slow at 224; use --smoke)'} | "
           f"mode={args.mode} margin={args.margin} scale={args.scale} img={args.img}")
 
     x_real = load_arr(args.img, "x_real"); ids_real = load_arr(args.img, "ids_real")
@@ -161,7 +161,7 @@ def main():
                 logits = head(e, y)
                 loss = ce(logits, y)
             scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
-            # accuracy from PLAIN cosine (no margin) — argmax of the margin-penalised logits
+            # accuracy from PLAIN cosine (no margin) - argmax of the margin-penalised logits
             # under-reports because ArcFace lowers the true-class logit by design.
             run += loss.item() * len(y); correct += (head.cosine(e.float()).argmax(1) == y).sum().item(); tot += len(y)
         sched.step()

@@ -1,5 +1,5 @@
 """
-Week 1 — Step 7: the MISSING measurement — full Super-Bit EER on held-out identities.
+Week 1 - Step 7: the MISSING measurement - full Super-Bit EER on held-out identities.
 
 06_superbit_export.py only writes the m=50 demo codes; results.md quotes a Super-Bit
 EER of 5.16% but no shipped script computes it. This closes that gap: same open-set
@@ -75,7 +75,7 @@ def main():
     rng = np.random.default_rng(args.seed)
 
     # img-aware loading: prefer x_real_<img>.npy / ids_test_<img>.npy (Tier-1 224 run),
-    # else fall back to the 96px defaults — so this one script serves both models.
+    # else fall back to the 96px defaults - so this one script serves both models.
     def dload(base):
         p = os.path.join(DATA, f"{base}_{args.img}.npy")
         return np.load(p, allow_pickle=True) if os.path.exists(p) else np.load(os.path.join(DATA, f"{base}.npy"), allow_pickle=True)
@@ -108,7 +108,7 @@ def main():
     itq_mean, itq_R = fit_itq(emb_train)
     itq_gal = ((emb_gal - itq_mean) @ itq_R > 0).astype(np.int8)
     itq_prb = ((emb_prb - itq_mean) @ itq_R > 0).astype(np.int8)
-    # Super-Bit (128-bit) — fit on train embeddings, friend's config
+    # Super-Bit (128-bit) - fit on train embeddings, friend's config
     if args.whiten:
         if not args.w1 or not os.path.exists(args.w1):
             raise SystemExit("--whiten needs --w1 <head_w1.npy> (run train_gpu_224.py to make it)")
@@ -144,7 +144,7 @@ def main():
     eer_b, _ = compute_eer(arr(gen_b), arr(imp_b))
 
     print("\n" + "=" * 72)
-    print("  SUPER-BIT EER LADDER — real held-out SOCOFing identities")
+    print("  SUPER-BIT EER LADDER - real held-out SOCOFing identities")
     print("=" * 72)
     print(f"  genuine pairs {len(gen_f)} | impostor pairs {len(imp_f)}")
     print("-" * 72)

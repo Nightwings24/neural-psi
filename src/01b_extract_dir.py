@@ -1,5 +1,5 @@
 """
-Week 1 — Step 1b: extract SOCOFing from an UNZIPPED directory (not the Kaggle zip).
+Week 1 - Step 1b: extract SOCOFing from an UNZIPPED directory (not the Kaggle zip).
 
 01_extract.py reads resources/archive.zip; this box instead has the dataset already
 unpacked at  <repo>/dataset/SOCOFing/{Real, Altered/Altered-Easy}.  This script mirrors

@@ -1,5 +1,5 @@
 # Blind-Touch base image: SEAL-Python (CKKS HE) + TensorFlow 2.11 stack
-# Ubuntu 20.04 ships Python 3.8 as the default python3 — no alternatives juggling needed.
+# Ubuntu 20.04 ships Python 3.8 as the default python3 - no alternatives juggling needed.
 FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive

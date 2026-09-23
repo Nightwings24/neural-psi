@@ -175,7 +175,7 @@ def main():
     imp_real, imp_pred, imp_H = map(np.array, (imp_real, imp_pred, imp_H))
 
     print("\n" + "=" * 74)
-    print("  REAL-CRYPTO vs CLOSED-FORM — Super-Bit codes through the actual flash-psi binary")
+    print("  REAL-CRYPTO vs CLOSED-FORM - Super-Bit codes through the actual flash-psi binary")
     print("=" * 74)
     print(f"  decisions: {len(gen_real)} genuine + {len(imp_real)} impostor  (B={B}, {nq} runs)")
     print(f"  per-run latency: mean {np.nanmean(durs):.1f} ms  (m={B}, full setup+online each run)")
@@ -210,7 +210,7 @@ def main():
     rep = os.path.join(HERE, "..", "docs", "results", "real-crypto-validation.md")
     rep = os.path.abspath(rep)
     with open(rep, "w") as f:
-        f.write("# Real-crypto validation — Super-Bit codes through the actual flash-psi binary\n\n")
+        f.write("# Real-crypto validation - Super-Bit codes through the actual flash-psi binary\n\n")
         f.write("Our held-out 224-model Super-Bit codes pushed through the REAL masked-OPRF + garbled-circuit\n")
         f.write("+ VOLE + Shamir protocol (`crypto/fingerprint.rs`), compared against the\n")
         f.write("closed-form sub-sampling model we used in Tier-1/Tier-2. Agreement => the surrogate is faithful\n")
@@ -222,8 +222,8 @@ def main():
         f.write("| metric | REAL (crypto) | PREDICTED (q-model) |\n|---|---|---|\n")
         f.write(f"| TAR | {np.mean(gen_real)*100:.2f}% | {np.mean(gen_pred)*100:.2f}% |\n")
         f.write(f"| FAR | {np.mean(imp_real):.2e} | {np.mean(imp_pred):.2e} |\n")
-        f.write(f"| genuine Hamming (mean/max) | {gen_H.mean():.2f} / {gen_H.max()} | — |\n")
-        f.write(f"| impostor Hamming (mean/min) | {imp_H.mean():.2f} / {imp_H.min()} | — |\n\n")
+        f.write(f"| genuine Hamming (mean/max) | {gen_H.mean():.2f} / {gen_H.max()} | - |\n")
+        f.write(f"| impostor Hamming (mean/min) | {imp_H.mean():.2f} / {imp_H.min()} | - |\n\n")
         f.write("Accept-rate by Hamming bucket (real vs closed-form):\n\n| H bucket | n | real | predicted |\n|---|---|---|---|\n")
         for a, b in zip(edges[:-1], edges[1:]):
             m = (allH >= a) & (allH < b)

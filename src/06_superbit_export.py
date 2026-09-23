@@ -1,5 +1,5 @@
 """
-Week 1 — Step 6: COMBINE friend's Super-Bit quantizer with the real flash-psi.
+Week 1 - Step 6: COMBINE friend's Super-Bit quantizer with the real flash-psi.
 
 Friend's quantizer.py turns a 16-D CNN embedding into a real 128-bit Hamming
 code (center + Super-Bit LSH + median balance) -- a proper 16->128 projection,

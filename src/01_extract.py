@@ -1,5 +1,5 @@
 """
-Week 1 — Step 1: Extract SOCOFing (SOKOTO) dataset from the Kaggle zip.
+Week 1 - Step 1: Extract SOCOFing (SOKOTO) dataset from the Kaggle zip.
 
 Reads resources/archive.zip directly (no full unzip), keeps only the canonical
 top-level `SOCOFing/` root (the zip ships a duplicate `socofing/SOCOFing/`),
