@@ -1,5 +1,5 @@
 """
-Week 1 — Step 3: Measure real EER on held-out identities, FLOAT vs BINARY.
+Week 1 - Step 3: Measure real EER on held-out identities, FLOAT vs BINARY.
 
 Protocol (open-set verification on identities NOT seen during training):
   - Enrollment template  = FC-16 embedding of the Real print.
@@ -143,7 +143,7 @@ def main():
     eer_q, thr_q = compute_eer(gen_q, imp_q)
 
     print("\n" + "=" * 66)
-    print("  WEEK 1 RESULT — real EER on held-out SOCOFing identities")
+    print("  WEEK 1 RESULT - real EER on held-out SOCOFing identities")
     print("=" * 66)
     print(f"  genuine pairs {len(gen_f)} | impostor pairs {len(imp_f)} | "
           f"FC-{emb_gal.shape[1]} float vector")

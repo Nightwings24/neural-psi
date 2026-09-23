@@ -1,10 +1,10 @@
-# Blind-Touch: Privacy-Preserving Fingerprint Authentication — Implementation Report
+# Blind-Touch: Privacy-Preserving Fingerprint Authentication - Implementation Report
 
-**Project:** Reproduction and local deployment of *Blind-Touch* (homomorphic-encryption–based
+**Project:** Reproduction and local deployment of *Blind-Touch* (homomorphic-encryption-based
 fingerprint authentication, AAAI 2024)
 **Environment:** Single-host Docker deployment, CPU-only
 **Date of report:** 11 June 2026
-**Status:** Complete — full pipeline verified end-to-end
+**Status:** Complete - full pipeline verified end-to-end
 
 ---
 
@@ -12,7 +12,7 @@ fingerprint authentication, AAAI 2024)
 
 Conventional biometric authentication requires the server to store and compare raw biometric
 templates. If that server is breached, the leaked fingerprints cannot be "reset" like a
-password — they are compromised permanently. **Blind-Touch** addresses this using **homomorphic
+password - they are compromised permanently. **Blind-Touch** addresses this using **homomorphic
 encryption (HE)**: a cryptographic scheme that allows mathematical operations to be performed on
 encrypted values, producing an encrypted result that, once decrypted, equals the result of the
 same operations on the original data. The authentication server therefore computes match scores
@@ -37,11 +37,11 @@ the paper's networked storage. All inter-service communication is over HTTP.
 
 **Shared volume layout** (`/workspace/shared_data` inside every container):
 
-- `keys/` — public, secret, Galois, and relinearization keys
-- `models/` — the trained `feature_model` and matching `model` (TensorFlow SavedModel format)
-- `data/` — preprocessed fingerprint dataset and held-out test set
-- `ciphertexts/` — the enrolled encrypted templates and the encrypted query
-- `results/` — intermediate and final encrypted match outputs
+- `keys/` - public, secret, Galois, and relinearization keys
+- `models/` - the trained `feature_model` and matching `model` (TensorFlow SavedModel format)
+- `data/` - preprocessed fingerprint dataset and held-out test set
+- `ciphertexts/` - the enrolled encrypted templates and the encrypted query
+- `results/` - intermediate and final encrypted match outputs
 
 **Homomorphic encryption scheme.** Microsoft SEAL's **CKKS** scheme (which supports approximate
 arithmetic on real numbers) was used with the following parameters:
@@ -67,7 +67,7 @@ Authentication is framed as a **similarity-matching** problem using a **Siamese 
 (twin networks with shared weights that learn whether two inputs are the same identity).
 
 **Feature extractor** (applied identically to both inputs):
-five convolutional blocks with increasing depth — 32 → 64 → 128 → 256 → 512 filters. Each block
+five convolutional blocks with increasing depth - 32 → 64 → 128 → 256 → 512 filters. Each block
 is a 3×3 convolution, batch normalization, a *swish* activation, and 2×2 max-pooling. A
 224×224 grayscale fingerprint is reduced to a 7×7×512 feature map, flattened to a
 **25 088-dimensional feature vector**, then unit-normalized.
@@ -79,8 +79,8 @@ to a final single-unit sigmoid layer that outputs a **match probability in [0, 1
 The model is trained with binary cross-entropy (genuine pair vs. impostor pair) using the Adam
 optimizer, and tracks accuracy, precision, recall, and F1.
 
-**Why this design matters for HE:** the expensive, privacy-sensitive part of the matching head —
-the linear projection over the high-dimensional feature vector — is exactly what is executed
+**Why this design matters for HE:** the expensive, privacy-sensitive part of the matching head -
+the linear projection over the high-dimensional feature vector - is exactly what is executed
 homomorphically on the server. The non-linear final steps are applied by the client after
 decryption.
 
@@ -113,7 +113,7 @@ Throughout, the server operates only on ciphertext and key material that cannot 
 - **Containerization:** Docker (Compose), four images built on a shared base image
 - **Base image contents:** Ubuntu 20.04, Python 3.8, TensorFlow 2.11, Microsoft SEAL (built from
   source), OpenCV (headless), Flask, aiohttp
-- **Dataset:** **SOCOFing** (Sokoto Coin Fingerprint) — 6 000 real fingerprint images
+- **Dataset:** **SOCOFing** (Sokoto Coin Fingerprint) - 6 000 real fingerprint images
 
 All results in this report were produced on CPU.
 
@@ -127,7 +127,7 @@ The system was built and exercised in the following stages:
    compiled from source), followed by three service images.
 2. **Dataset preprocessing.** A purpose-written script converted the 6 000 raw SOCOFing `.BMP`
    images into a single normalized array of shape (6000, 224, 224, 1). *(This step was absent
-   from the upstream materials — see Section 8.)*
+   from the upstream materials - see Section 8.)*
 3. **Model training.** The Siamese network was trained for **150 epochs** on CPU, executed
    headlessly. Trained weights were saved to the shared volume.
 4. **Enrollment.** Encryption keys were generated and enrolled templates were encrypted and
@@ -163,7 +163,7 @@ A genuine query (enrolled identity #467) was authenticated end-to-end under encr
 | Highest score across all enrolled identities | 0.998441 (the correct identity) |
 | Next-highest (impostor) score | 0.937245 |
 | Acceptance threshold | 0.99 |
-| Identities above threshold | exactly one — the correct identity |
+| Identities above threshold | exactly one - the correct identity |
 | **Decision** | **Authenticated** |
 | Homomorphic matching time | ≈ 0.23 s |
 
@@ -226,9 +226,9 @@ queries; (2) scale to multiple clusters to mirror the paper's distributed design
 
 ## 10. Reproducibility
 
-The deployment is fully scripted. The complete, exact command sequence — including the two
+The deployment is fully scripted. The complete, exact command sequence - including the two
 directory-creation fixes and the headless execution commands for training, enrollment, and
-authentication — is recorded in the project's [`reproduce.md`](reproduce.md), and every deviation
+authentication - is recorded in the project's [`reproduce.md`](reproduce.md), and every deviation
 from the upstream materials is recorded in [`setup-notes.md`](setup-notes.md). A fresh reproduction
 follows: build images →
 preprocess dataset → train → enroll → start servers → authenticate.
@@ -240,10 +240,10 @@ preprocess dataset → train → enroll → start servers → authenticate.
 The Blind-Touch privacy-preserving fingerprint authentication system was successfully reproduced
 and verified end-to-end on local CPU hardware. A high-accuracy matching model (99.58 % validation
 accuracy) was trained, and a genuine fingerprint was authenticated **entirely over encrypted
-data** — the matching server at no point had access to the plaintext biometric — yielding a
+data** - the matching server at no point had access to the plaintext biometric - yielding a
 correct **Authenticated** decision with a clear margin over impostor scores and sub-second
 homomorphic matching. In the course of the work, multiple defects in the upstream code and
 documentation were identified and fixed, and the build was made reproducible. The result is a
-working, well-documented demonstration of homomorphic-encryption–based biometric authentication
+working, well-documented demonstration of homomorphic-encryption-based biometric authentication
 and a solid foundation for the quantitative evaluation and multi-cluster extensions outlined
 above.

@@ -1,7 +1,7 @@
 # Blind-Touch Implementation Guide
 ## Homomorphic Encryption Fingerprint Auth on Fedora with Docker
 
-**Paper:** Blind-Touch (AAAI'24) — HE-based distributed neural network inference  
+**Paper:** Blind-Touch (AAAI'24) - HE-based distributed neural network inference  
 **Repo:** https://github.com/hm-choi/blind-touch  
 **Your setup:** Fedora host → 2 Docker containers communicating via shared volume
 
@@ -10,28 +10,28 @@
 ## Before You Start
 
 ### Claude model recommendation
-- **Day-to-day work:** Claude Sonnet 4.6 (what you're using now) — fast, great for writing Dockerfiles, debugging Python, adapting notebooks
+- **Day-to-day work:** Claude Sonnet 4.6 (what you're using now) - fast, great for writing Dockerfiles, debugging Python, adapting notebooks
 - **Hard build failures:** Switch to Claude Opus 4.6 with extended thinking enabled when you hit SEAL-Python compilation errors or TensorFlow version conflicts
 - **Effort level:** Use normal mode for setup steps; enable extended thinking explicitly when debugging cryptographic library build failures
 
 ### What you're building
 The original paper uses 5 servers (1 client + 1 main server + 3 cluster servers) with NAS storage for ciphertext transfer.  
 For this local demo you'll use **2 Docker containers** on a single machine:
-- `blindtouch-client` — runs CNN feature extraction and SEAL encryption
-- `blindtouch-server` — runs HE inference (acts as Cluster 1)
+- `blindtouch-client` - runs CNN feature extraction and SEAL encryption
+- `blindtouch-server` - runs HE inference (acts as Cluster 1)
 - A **shared Docker volume** replaces NAS
 
-The CKKS homomorphic encryption means ciphertexts can be sent over any channel — security comes from the math, not the transport.
+The CKKS homomorphic encryption means ciphertexts can be sent over any channel - security comes from the math, not the transport.
 
 ### Hardware requirements
 - 8 GB RAM minimum (HE operations are memory-hungry)
 - 16 GB recommended
-- No GPU required for the demo (CPU-only works, inference will be slow ~10–30s per query)
+- No GPU required for the demo (CPU-only works, inference will be slow ~10-30s per query)
 - If you want GPU: CUDA 11.4 + cuDNN 8.1 (matches TF 2.11.0 requirements)
 
 ---
 
-## Phase 1 — Fedora Host Setup
+## Phase 1 - Fedora Host Setup
 
 ### 1.1 Install Docker and Docker Compose
 
@@ -72,7 +72,7 @@ ls
 
 ---
 
-## Phase 2 — Project Structure Setup
+## Phase 2 - Project Structure Setup
 
 ### 2.1 Create your working directory
 
@@ -101,7 +101,7 @@ pip3 install kaggle
 
 # Configure Kaggle API key:
 # 1. Go to https://www.kaggle.com/settings
-# 2. Click "Create New API Token" — downloads kaggle.json
+# 2. Click "Create New API Token" - downloads kaggle.json
 mkdir -p ~/.kaggle
 cp ~/Downloads/kaggle.json ~/.kaggle/
 chmod 600 ~/.kaggle/kaggle.json
@@ -116,7 +116,7 @@ unzip socofing.zip
 
 ---
 
-## Phase 3 — Dockerfile and Docker Compose
+## Phase 3 - Dockerfile and Docker Compose
 
 ### 3.1 Create the shared base Dockerfile
 
@@ -145,7 +145,7 @@ RUN update-alternatives --install /usr/bin/pip3 pip3 /usr/bin/pip 1
 # Upgrade pip
 RUN pip3 install --upgrade pip setuptools wheel
 
-# Install SEAL-Python (the core HE library — takes 5–10 min to build)
+# Install SEAL-Python (the core HE library - takes 5-10 min to build)
 # This must come before TensorFlow to avoid dependency conflicts
 RUN pip3 install numpy pybind11
 RUN git clone https://github.com/Huelse/SEAL-Python.git /opt/SEAL-Python
@@ -178,7 +178,7 @@ RUN pip3 install jupyter
 WORKDIR /workspace
 ```
 
-**Important:** The SEAL-Python build compiles C++ code. It takes 5–10 minutes but only happens once. If the build fails, see Troubleshooting at the end of this guide.
+**Important:** The SEAL-Python build compiles C++ code. It takes 5-10 minutes but only happens once. If the build fails, see Troubleshooting at the end of this guide.
 
 ### 3.2 Dockerfile for the client container
 
@@ -262,18 +262,18 @@ networks:
     driver: bridge
 ```
 
-The `shared_ckks` Docker volume is the key part: both containers mount it, so ciphertexts and keys written by the client are immediately visible to the server — exactly like the NAS in the original paper.
+The `shared_ckks` Docker volume is the key part: both containers mount it, so ciphertexts and keys written by the client are immediately visible to the server - exactly like the NAS in the original paper.
 
 ---
 
-## Phase 4 — Build and Launch
+## Phase 4 - Build and Launch
 
 ### 4.1 Build the base image first
 
 ```bash
 cd ~/blindtouch-demo
 
-# Build base (takes 10–15 min first time due to SEAL-Python compilation)
+# Build base (takes 10-15 min first time due to SEAL-Python compilation)
 docker build -t blindtouch-base:latest -f Dockerfile.base .
 
 # Watch for: "Successfully installed seal-python" or "build_ext successful"
@@ -307,7 +307,7 @@ You should see the workspace files in each.
 
 ---
 
-## Phase 5 — Running the Experiment
+## Phase 5 - Running the Experiment
 
 ### 5.1 Train the model (client container)
 
@@ -316,22 +316,22 @@ In the **client** Jupyter (port 8888):
 1. Navigate to `training/`
 2. Open `Blind-Touch-Training-SampleNotebook(SOKOTO).ipynb`
 3. Update the dataset path at the top to point to `/workspace/dataset/SOCOFing/Real/`
-4. Run all cells — this will:
+4. Run all cells - this will:
    - Preprocess images (resize to 224×224)
    - Train two models: `feature_model` (outputs 16-dim vector) and `model` (full classifier)
    - Save both to `/workspace/shared_data/models/`
 
-Training takes 10–30 minutes on CPU depending on your hardware.
+Training takes 10-30 minutes on CPU depending on your hardware.
 
 ### 5.2 Generate CKKS keys (client container)
 
 In the **client** Jupyter:
 
 1. Open `client/Blind-Touch-Client.ipynb`
-2. Run the key generation cells — this creates:
-   - `public_key` — safe to share with server
-   - `galois_key` — needed for server-side rotations
-   - `relin_key` — needed for relinearization after multiplication
+2. Run the key generation cells - this creates:
+   - `public_key` - safe to share with server
+   - `galois_key` - needed for server-side rotations
+   - `relin_key` - needed for relinearization after multiplication
    - All saved to `/workspace/shared_data/keys/`
 
 Because the server container mounts the same `shared_ckks` volume, keys are instantly available to it.
@@ -343,7 +343,7 @@ In the **server** Jupyter (port 8889):
 1. Navigate to `server/`
 2. Open `Blind-Touch-Server(Cluster1).ipynb` (or equivalent cluster notebook)
 3. Update paths to point to `/workspace/shared_data/`
-4. Run the server cells — the server will:
+4. Run the server cells - the server will:
    - Load the keys from shared volume
    - Wait for incoming ciphertexts
    - Perform HE inference using the FC-1 layer
@@ -366,7 +366,7 @@ Back in the **client** Jupyter:
 
 ---
 
-## Phase 6 — Verifying Secure Communication
+## Phase 6 - Verifying Secure Communication
 
 To confirm encrypted data is flowing correctly:
 
@@ -374,7 +374,7 @@ To confirm encrypted data is flowing correctly:
 # Watch the shared volume for new files
 docker exec blindtouch-client watch -n1 ls /workspace/shared_data/ciphertexts/
 
-# Print the ciphertext size (should be ~300–400 KB per the paper)
+# Print the ciphertext size (should be ~300-400 KB per the paper)
 docker exec blindtouch-client du -sh /workspace/shared_data/ciphertexts/*
 
 # Confirm the server can see the same files
@@ -394,7 +394,7 @@ docker exec blindtouch-client tcpdump -i eth0 -n
 
 ---
 
-## Phase 7 — Notebook-to-Script Adaptation (Optional)
+## Phase 7 - Notebook-to-Script Adaptation (Optional)
 
 The repo ships as Jupyter notebooks. If you want to run everything as Python scripts (more suitable for automation):
 
@@ -471,7 +471,7 @@ The CKKS scheme used here allows arithmetic on encrypted floating-point numbers:
 - **Depth limit:** Keys are generated to support exactly 3 multiplications (one per layer)
 - **Slots:** With `d=16384`, each ciphertext holds 8192 values (the 16-dim feature vector gets packed with batch/rotation tricks)
 - **Key sizes:** Public key ~240 KB, Galois key ~240 MB (large, transferred once at registration), ciphertext ~48 KB
-- **Compression method:** The main server uses SIMD-style packing to process 8192 authentication results in a single ciphertext operation — this is the paper's key contribution
+- **Compression method:** The main server uses SIMD-style packing to process 8192 authentication results in a single ciphertext operation - this is the paper's key contribution
 
 The server **never sees your fingerprint** or even your feature vector in plaintext. It operates entirely on ciphertexts, and the result it sends back is also encrypted. Only your client's secret key can decrypt the final score.
 

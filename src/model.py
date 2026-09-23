@@ -1,5 +1,5 @@
 """
-Week 1 — PyTorch port of the Blind-Touch Siamese CNN.
+Week 1 - PyTorch port of the Blind-Touch Siamese CNN.
 
 Faithful to the SOKOTO training notebook's feature extractor:
   5x [Conv(3x3, same) -> BatchNorm -> swish(SiLU) -> MaxPool(2)]

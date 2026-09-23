@@ -1,4 +1,4 @@
-# Efficiency results — communication (§7.3), latency (§7.4), storage (§7.5)
+# Efficiency results - communication (§7.3), latency (§7.4), storage (§7.5)
 
 Measured on the real flash-psi binary (`implementation/flash-psi/src/bin/simulation.rs`, `--sim-type flpsi
 --track-io`), op-point **weight=14, t=2, T=64, d=128** (our Super-Bit point). Communication is the
@@ -14,18 +14,18 @@ Phase timings (this machine: RTX 4050 6 GB; CNN client-side):
 
 | N (db size) | online comm | per-record |
 |---|---|---|
-| 100    | 0.40 MB  | — |
-| 250    | 0.63 MB  | — |
-| 500    | 1.00 MB  | — |
-| 1,000  | 1.76 MB  | — |
-| 2,500  | 4.01 MB  | — |
-| 5,000  | 7.77 MB  | — |
-| 10,000 | 15.28 MB | — |
-| 25,000 | 37.83 MB | — |
+| 100    | 0.40 MB  | - |
+| 250    | 0.63 MB  | - |
+| 500    | 1.00 MB  | - |
+| 1,000  | 1.76 MB  | - |
+| 2,500  | 4.01 MB  | - |
+| 5,000  | 7.77 MB  | - |
+| 10,000 | 15.28 MB | - |
+| 25,000 | 37.83 MB | - |
 | 50,000 | 75.40 MB | ~1.54 KB/record (asymptotic) |
 
-Linear: `comm ≈ 0.25 MB + 1.54 KB·N`. Extrapolates to **~150 MB @ 100 K** and **~1.5 GB @ 1 M** —
-matching Bui–Cong's reported **153 MB / 1533 MB**, confirming NeuralPSI inherits FLPSI's communication
+Linear: `comm ≈ 0.25 MB + 1.54 KB·N`. Extrapolates to **~150 MB @ 100 K** and **~1.5 GB @ 1 M** -
+matching Bui-Cong's reported **153 MB / 1533 MB**, confirming NeuralPSI inherits FLPSI's communication
 profile (the quantiser adds nothing to comm; it only sets the 128-bit width the protocol already uses).
 
 ## §7.4 End-to-end latency breakdown (one authentication)
@@ -35,10 +35,10 @@ profile (the quantiser adds nothing to comm; it only sets the 128-bit width the 
 | CNN forward (client, GPU) | 0.80 ms | 0.80 ms | O(1) in N |
 | Quantise (client) | 0.002 ms | 0.002 ms | O(1) in N |
 | **FLPSI online (query-time)** | **187 ms** | **823 ms** | ~0.16 ms/record |
-| — total query-time latency | **~188 ms** | **~824 ms** | dominated by FLPSI online |
+| - total query-time latency | **~188 ms** | **~824 ms** | dominated by FLPSI online |
 | FLPSI offline (setup, preprocessing) | 553 ms | 1,946 ms | ~0.38 ms/record + ~240 ms fixed |
 
-- Client-side cost (CNN + quantise) is **< 1 ms** on GPU — the embedding/binarisation bridge is not the
+- Client-side cost (CNN + quantise) is **< 1 ms** on GPU - the embedding/binarisation bridge is not the
   bottleneck; the server-side FLPSI linear scan is.
 - FLPSI **offline** (VOLE-OT setup + garbling + TLPSI construction) is data-independent and can run
   before the query arrives, so it does not count against query-time latency.

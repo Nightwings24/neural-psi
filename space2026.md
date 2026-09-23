@@ -1,7 +1,7 @@
 # SPACE 2026: Call for Papers
 
 **Sixteenth International Conference on Security, Privacy and Applied Cryptographic Engineering**
-**December 16-19, 2026 — Bangalore, India**
+**December 16-19, 2026 - Bangalore, India**
 
 ## Overview
 SPACE 2026 seeks paper submissions presenting novel contributions related to all real-world aspects of security and privacy. We seek articles presenting accessible and compelling results to general computer security researchers. Purely theoretical (e.g., cryptography-focused, with no security/application connections) submissions are not encouraged. The same applies for submissions focusing primarily on blockchains or machine learning.

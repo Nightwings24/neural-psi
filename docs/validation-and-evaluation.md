@@ -1,4 +1,4 @@
-# NeuralPSI — Validation & Evaluation (everything after C2)
+# NeuralPSI - Validation & Evaluation (everything after C2)
 
 *Companion to `C2_quantization_writeup.md`. C2 established the **bridge** (16 floats → 128-bit
 Super-Bit code, 1.88% EER). This document covers what we did **after** that: proving the bridge works
@@ -7,13 +7,13 @@ through the **real cryptography** (not just our Python model), and measuring the
 
 > **One-line summary.** The Super-Bit bridge now runs end-to-end through the **actual** flash-psi
 > crypto and behaves exactly as our model predicted (real FAR **4.43e‑2** vs predicted **4.45e‑2**);
-> the system's communication tracks Bui–Cong's published numbers (**~150 MB @ 100 K**, matching their
+> the system's communication tracks Bui-Cong's published numbers (**~150 MB @ 100 K**, matching their
 > 153 MB); storage is **16 B/user** (vs Blind-Touch's 1.67 KB + 117 MB key); and **d = 128 is the knee**
 > of the accuracy/size trade-off.
 
 ---
 
-## 1. Real-crypto validation — the headline result
+## 1. Real-crypto validation - the headline result
 
 **Why it matters.** Everything in our accuracy/operating-point work (Tier-1, Tier-2) was computed
 through a *faithful Python port* of flash-psi plus a closed-form sub-sampling model `q(H)`. That left
@@ -25,7 +25,7 @@ API addition), then pushed our real held-out 224-model Super-Bit codes through t
 **a database of 100 enrollment codes, 100 probe queries → 100 genuine + 9,900 impostor decisions**, all
 through real crypto, at our operating point (weight = 14, t = 2, T = 64).
 
-**Result — the real crypto matches our model almost exactly:**
+**Result - the real crypto matches our model almost exactly:**
 
 | metric | **REAL (crypto)** | **PREDICTED (our model)** |
 |---|---|---|
@@ -46,7 +46,7 @@ And the accept-rate tracks the model across the **entire fractional transition**
 Confident regime: **94/94 accepts** and **8,522/8,523 rejects** correct.
 
 **What this buys us:**
-1. **The bridge is real-crypto-correct** — first end-to-end run of our own codes through the genuine
+1. **The bridge is real-crypto-correct** - first end-to-end run of our own codes through the genuine
    FLPSI stack.
 2. **Our entire evaluation is retroactively validated.** Every accuracy/FAR number we've reported came
    from the surrogate + `q(H)`; this proves that model is faithful (real FAR 4.43e‑2 vs predicted
@@ -60,17 +60,17 @@ Confident regime: **94/94 accepts** and **8,522/8,523 rejects** correct.
 
 Measured on the real protocol binary with network-IO tracking, sweeping the database size.
 
-### §7.3 Communication — and it matches Bui–Cong
+### §7.3 Communication - and it matches Bui-Cong
 
 | N (database size) | 100 | 1,000 | 5,000 | 10,000 | 50,000 | → 100 K | → 1 M |
 |---|---|---|---|---|---|---|---|
 | communication | 0.40 MB | 1.76 MB | 7.77 MB | 15.28 MB | 75.40 MB | **~150 MB** | **~1.5 GB** |
 
-Linear at **~1.54 KB/record**. Extrapolates to ~150 MB @ 100 K and ~1.5 GB @ 1 M — matching
-Bui–Cong's reported **153 MB / 1533 MB**. The quantiser adds **nothing** to communication; it only sets
+Linear at **~1.54 KB/record**. Extrapolates to ~150 MB @ 100 K and ~1.5 GB @ 1 M - matching
+Bui-Cong's reported **153 MB / 1533 MB**. The quantiser adds **nothing** to communication; it only sets
 the 128-bit width the protocol already uses. Replacing HE removes Blind-Touch's 117 MB Galois key.
 
-### §7.4 Latency breakdown — the bridge is not the bottleneck
+### §7.4 Latency breakdown - the bridge is not the bottleneck
 
 | phase | N = 1,000 | N = 5,000 | scaling |
 |---|---|---|---|
@@ -79,7 +79,7 @@ the 128-bit width the protocol already uses. Replacing HE removes Blind-Touch's 
 | **FLPSI online (query-time)** | **187 ms** | **823 ms** | ~0.16 ms/record |
 | FLPSI offline (preprocessing) | 553 ms | 1,946 ms | data-independent, off the query path |
 
-Client-side work (CNN + the Super-Bit quantisation) is **under 1 ms** — the cost is the server-side
+Client-side work (CNN + the Super-Bit quantisation) is **under 1 ms** - the cost is the server-side
 FLPSI scan. The offline setup is data-independent and can run before the query arrives.
 
 ### §7.5 Storage
@@ -95,7 +95,7 @@ FLPSI scan. The offline setup is data-independent and can run before the query a
 
 ---
 
-## 3. Dimension ablation (§7.6) — why d = 128
+## 3. Dimension ablation (§7.6) - why d = 128
 
 We swept the code length and re-encoded the same held-out fingers:
 
@@ -139,9 +139,9 @@ for M in 100 1000 5000 10000 50000; do ./target/release/simulation --sim-type fl
 ---
 
 ## TL;DR for the slide
-- **Validated the bridge on real crypto:** our codes through the actual OPRF/GC/VOLE/Shamir binary —
+- **Validated the bridge on real crypto:** our codes through the actual OPRF/GC/VOLE/Shamir binary -
   real FAR **4.43e‑2** vs predicted **4.45e‑2**. The model we trusted is faithful.
-- **Efficiency measured:** ~**1.54 KB/record** comm (→ ~150 MB @ 100 K, matching Bui–Cong); **16 B/user**
+- **Efficiency measured:** ~**1.54 KB/record** comm (→ ~150 MB @ 100 K, matching Bui-Cong); **16 B/user**
   storage (vs 1.67 KB + 117 MB key); client-side CNN+quantise **< 1 ms**.
 - **d = 128 justified:** accuracy saturates there; smaller loses accuracy, larger only wastes storage;
   and the backend is built for 128.

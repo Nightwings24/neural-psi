@@ -1,5 +1,5 @@
 """
-Step 17: multi-finger fusion — Super-Bit vs L2-thermometer bridge.
+Step 17: multi-finger fusion - Super-Bit vs L2-thermometer bridge.
 
 Reuses the EXACT validated flash-psi accept model from 11_operating_point.py
 (subsample_match_probs + accept_matrix + Poisson-binomial over real subject pairs).

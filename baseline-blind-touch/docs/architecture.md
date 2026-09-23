@@ -1,4 +1,4 @@
-# Blind-Touch — Plain-Language Architecture Explainer
+# Blind-Touch - Plain-Language Architecture Explainer
 
 A surface-level walkthrough of the Blind-Touch privacy-preserving fingerprint
 authentication system, written for explaining the project to a mentor. Companion
@@ -9,17 +9,17 @@ to [`implementation-report.md`](implementation-report.md) (which has the formal 
 ## 1. The one-sentence version
 
 > **Blind-Touch lets a server check whether your fingerprint matches an enrolled
-> user — without the server ever being able to *see* your fingerprint.** It does
+> user - without the server ever being able to *see* your fingerprint.** It does
 > the matching math directly on *encrypted* data.
 
 ## 2. The problem it solves
 
 Normally, to match a fingerprint, a server stores your actual fingerprint template
 and compares it to the one you present. If that server is hacked, your fingerprint
-leaks — and unlike a password, **you can't reset your fingerprint.** It's
+leaks - and unlike a password, **you can't reset your fingerprint.** It's
 compromised forever.
 
-Blind-Touch fixes this with **homomorphic encryption (HE)** — a kind of encryption
+Blind-Touch fixes this with **homomorphic encryption (HE)** - a kind of encryption
 where you can do math on the *encrypted* numbers, and the encrypted answer decrypts
 to the correct result. So the server computes the match score on data it literally
 cannot read.
@@ -56,7 +56,7 @@ client (who holds the secret key) can decrypt it.
 | **cluster1** | Matching worker | Holds the encrypted enrolled templates and does the actual encrypted comparison math. |
 
 > The *paper* uses several cluster workers (it shards the user database across them
-> to scale). This demo uses **one** cluster — same cryptography, just not sharded.
+> to scale). This demo uses **one** cluster - same cryptography, just not sharded.
 > That's a config change, not a redesign.
 
 ---
@@ -86,12 +86,12 @@ client (who holds the secret key) can decrypt it.
         port 8888 (Jupyter)       port 8090                   (internal only)
 
    🔑 = holds the secret key    🔒 = only place that can decrypt
-   Everything left of the client is BLIND — it only ever touches encrypted data.
+   Everything left of the client is BLIND - it only ever touches encrypted data.
 ```
 
 ---
 
-## 6. Flow 1 — Enrollment (one-time setup)
+## 6. Flow 1 - Enrollment (one-time setup)
 
 ```
   CLIENT
@@ -110,7 +110,7 @@ client (who holds the secret key) can decrypt it.
         (the SECRET key is written too but ONLY the client uses it)
 ```
 
-## 7. Flow 2 — Authentication (the live request)
+## 7. Flow 2 - Authentication (the live request)
 
 ```
    CLIENT                         MAIN                      CLUSTER1
@@ -144,15 +144,15 @@ A -> C1 C2 C3 .. C512 -> C (>0.99)
 CKKS Scheme - SEAL
 
 The 7 beats to narrate:
-1. **Client encodes & encrypts** — fingerprint → feature vector → ciphertext. Secret key stays on device.
-2. **Send** — only ciphertext goes over the network.
-3. **Coordinator forwards** — `main` fans out to worker(s).
-4. **Blind matching** — `cluster1` computes on encrypted data: *subtract → square → project*. Never decrypts.
-5. **Encrypted score returned** — still ciphertext, ~0.23 s.
-6. **Aggregate** — `main` combines results (with multiple clusters, merges them here).
-7. **Client decrypts & decides** — final step + 0.99 threshold → Authenticated / Rejected.
+1. **Client encodes & encrypts** - fingerprint → feature vector → ciphertext. Secret key stays on device.
+2. **Send** - only ciphertext goes over the network.
+3. **Coordinator forwards** - `main` fans out to worker(s).
+4. **Blind matching** - `cluster1` computes on encrypted data: *subtract → square → project*. Never decrypts.
+5. **Encrypted score returned** - still ciphertext, ~0.23 s.
+6. **Aggregate** - `main` combines results (with multiple clusters, merges them here).
+7. **Client decrypts & decides** - final step + 0.99 threshold → Authenticated / Rejected.
 
-**The line to land:** *"Everything from the network onward is blind — `main` and
+**The line to land:** *"Everything from the network onward is blind - `main` and
 `cluster1` only ever touch ciphertext. Plaintext biometrics and the secret key
 exist only on the client. A fully compromised server leaks nothing usable."*
 
@@ -181,8 +181,8 @@ np.matmul(vector, weight)       ← weight = the matching layer's kernel (25088 
   ciphertext  → saved as ctxt1 / ctxt2 / ctxt3 on the shared volume
 ```
 
-So one enrolled template is just **16 numbers** — a compressed fingerprint
-signature — and then it's **encrypted**.
+So one enrolled template is just **16 numbers** - a compressed fingerprint
+signature - and then it's **encrypted**.
 
 ### The elegant packing trick
 
@@ -196,14 +196,14 @@ ctxt1 = encryptor.encrypt(ckks_encoder.encode(result1.flatten(), scale))
 - CKKS has exactly **8,192 slots** per ciphertext
 
 So **`ctxt1` packs 512 enrolled users into a single ciphertext.** That's why one
-homomorphic operation can match the query against all 512 at once — and why it's
+homomorphic operation can match the query against all 512 at once - and why it's
 fast.
 
 ### "Enrolled template" = three things stacked
 
-1. **A biometric template** — a math representation used for comparison, never the raw image (here, the net's feature vector projected down to 16 numbers).
-2. **Pre-computed** — the heavy neural-net work is done at enrollment, baked into the stored template, so matching later is cheap.
-3. **Homomorphically encrypted** — the stored form (`ctxt1`) is ciphertext; the cluster holds it but has no secret key, so it can never read who's enrolled.
+1. **A biometric template** - a math representation used for comparison, never the raw image (here, the net's feature vector projected down to 16 numbers).
+2. **Pre-computed** - the heavy neural-net work is done at enrollment, baked into the stored template, so matching later is cheap.
+3. **Homomorphically encrypted** - the stored form (`ctxt1`) is ciphertext; the cluster holds it but has no secret key, so it can never read who's enrolled.
 
 ### Used at match time (`server/cluster1/service.py`)
 
@@ -217,26 +217,26 @@ difference → same finger → high score. All on ciphertext.
 
 **One-liner:** *"An enrolled template is a registered fingerprint compressed by the
 neural network into 16 numbers and then homomorphically encrypted. Hundreds are
-packed into one ciphertext, so the server matches against all of them at once —
+packed into one ciphertext, so the server matches against all of them at once -
 blindly."*
 
 ---
 
 ## 9. What is the role of `main`, if it just passes things to and fro?
 
-In **this demo** (one cluster), `main` *is* basically a passthrough — the client
+In **this demo** (one cluster), `main` *is* basically a passthrough - the client
 could talk to `cluster1` directly. But `main` exists because of what the **full**
-system looks like: a **scatter–gather** coordinator.
+system looks like: a **scatter-gather** coordinator.
 
 ### The real (multi-cluster) picture
 
-The paper shards the enrolled database **across many clusters** — cluster1 holds
-users 1–512, cluster2 holds 513–1024, etc. No single cluster has everyone.
+The paper shards the enrolled database **across many clusters** - cluster1 holds
+users 1-512, cluster2 holds 513-1024, etc. No single cluster has everyone.
 
 ```
-                          ┌──▶ cluster1  (users 1–512)    ─┐
-   client ──query──▶ MAIN ─┼──▶ cluster2 (users 513–1024) ─┤  partial
-                          └──▶ cluster3  (users 1025–...)  ─┘  encrypted
+                          ┌──▶ cluster1  (users 1-512)    ─┐
+   client ──query──▶ MAIN ─┼──▶ cluster2 (users 513-1024) ─┤  partial
+                          └──▶ cluster3  (users 1025-...)  ─┘  encrypted
                                                                results
                               MAIN combines them ◀────────────┘
                               into ONE ciphertext
@@ -267,11 +267,11 @@ users 1–512, cluster2 holds 513–1024, etc. No single cluster has everyone.
 | **Scatter** | Broadcasts the query to all shards in parallel. |
 | **Gather + compress** | Combines many partial encrypted results into one ciphertext, so the client does a single decryption. |
 
-**How to say it:** *"`main` is the coordinator in a scatter–gather design. Because
+**How to say it:** *"`main` is the coordinator in a scatter-gather design. Because
 the enrolled database is sharded across many cluster workers, `main` broadcasts the
 encrypted query to all of them and homomorphically combines their partial results
 into one ciphertext for the client. In my single-cluster demo there's only one
-worker, so `main` is effectively a passthrough — but it's the component that makes
+worker, so `main` is effectively a passthrough - but it's the component that makes
 the system scale to millions of users across many servers, which is the paper's
 whole point."*
 
@@ -279,7 +279,7 @@ whole point."*
 
 ## 10. Where everything lives in the code
 
-- `client/*.ipynb` — **Client** (feature extraction), **Enroll** (keygen + encrypt templates), **Auth** (encrypt query, send, decrypt, decide).
-- `server/cluster1/service.py` — the heart: encrypted match (`evaluator.sub` → `square` → `fc1_layer`), ~80 lines.
-- `server/main/service.py` — coordinator; scatter (`fetch_all`) + gather (`add_many`).
-- `docker-compose.yml` — wires the 3 containers + the one shared volume (stands in for the paper's networked storage).
+- `client/*.ipynb` - **Client** (feature extraction), **Enroll** (keygen + encrypt templates), **Auth** (encrypt query, send, decrypt, decide).
+- `server/cluster1/service.py` - the heart: encrypted match (`evaluator.sub` → `square` → `fc1_layer`), ~80 lines.
+- `server/main/service.py` - coordinator; scatter (`fetch_all`) + gather (`add_many`).
+- `docker-compose.yml` - wires the 3 containers + the one shared volume (stands in for the paper's networked storage).

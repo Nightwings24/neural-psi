@@ -1,5 +1,5 @@
 """
-Week 1 — Step 4: Tune the flash-psi fuzzy matcher (weight, t) for 16-bit vectors.
+Week 1 - Step 4: Tune the flash-psi fuzzy matcher (weight, t) for 16-bit vectors.
 
 The default flash-psi params (weight=14, T=64, t=2) are for 128-bit vectors.
 Our Blind-Touch bridge emits 16 bits, so we re-derive (weight, t) from the REAL

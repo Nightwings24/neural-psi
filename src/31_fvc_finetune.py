@@ -1,5 +1,5 @@
 """
-Step 31: generality test #2 — FVC2002. The SOCOFing CNN does not transfer to FVC (float EER
+Step 31: generality test #2 - FVC2002. The SOCOFing CNN does not transfer to FVC (float EER
 22-38%), so we FINE-TUNE it on pooled FVC2002 train fingers (warm-started from feature_model_224),
 then run feature-head QAT vs ortho-thermometer per DB on held-out test fingers.
 

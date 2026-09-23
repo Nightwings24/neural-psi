@@ -1,5 +1,5 @@
 """
-Step 30: generality test #1 — feature-head QAT vs ortho-thermometer on PolyU (same-sensor),
+Step 30: generality test #1 - feature-head QAT vs ortho-thermometer on PolyU (same-sensor),
 a genuinely different real corpus. Uses the PolyU-trained CNN (feature_model_polyu_d16.pt) as a
 frozen extractor. Finger-disjoint train/test split; gallery = sample 0, probes = samples 1..5.
 
@@ -53,7 +53,7 @@ def code_eer_ci(cg, cp, pf, gfids, B=300, seed=0):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--modality", default="cless", choices=["cless", "contact"])
+    ap.add_argument("--modality", default="cless")
     ap.add_argument("--ckpt", default="feature_model_polyu_d16.pt")
     ap.add_argument("--pca", type=int, default=512)
     ap.add_argument("--epochs", type=int, default=400)

@@ -1,5 +1,5 @@
 """
-Week 1 — Step 2: Train the Blind-Touch Siamese CNN on SOCOFing (CPU).
+Week 1 - Step 2: Train the Blind-Touch Siamese CNN on SOCOFing (CPU).
 
 - Splits the 6000 identities into train / test (held-out for EER).
 - Builds genuine pairs from augmented views of the same Real print, and

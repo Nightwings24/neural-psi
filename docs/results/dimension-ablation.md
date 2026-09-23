@@ -1,4 +1,4 @@
-# §7.6 Quantisation-dimension ablation — EER vs Super-Bit code length d
+# §7.6 Quantisation-dimension ablation - EER vs Super-Bit code length d
 
 Same open-set protocol as the EER ladder (held-out identities, Real enroll vs Altered-Easy
 probe). Super-Bit = ceil(d/16) orthonormalised 16x16 blocks; plain (no whitening); 224 model.

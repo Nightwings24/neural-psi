@@ -4,7 +4,7 @@ Pure-Python flash-psi match verification (no Rust toolchain needed).
 Uses YOUR own faithful port `flpsi_match.SubSampler` (week1/flpsi_match.py), which mirrors
 flash-psi/src/subsample.rs, to run the Stage-3 fuzzy sub-sampling decision on the exported
 code files. Same accept/reject logic as the real protocol (masked OPRF + GC + VOLE + Shamir),
-no cryptography — so it confirms the MATCH CORRECTNESS without building the Rust binary.
+no cryptography - so it confirms the MATCH CORRECTNESS without building the Rust binary.
 
 Place this file in week1/ (next to flpsi_match.py) and run:  python3 run_flpsi_match.py
 

@@ -13,7 +13,7 @@ src/data/feature_model.pt
 
 # ---- Round-2 artifacts: large / regenerable models, feature caches, learned codes ----
 # (all reproducible from the numbered scripts; never push these. NOTE: gitignore has no
-#  inline comments — keep patterns on their own lines.)
+#  inline comments - keep patterns on their own lines.)
 # dim-sweep / PolyU / FVC checkpoints
 src/data/feature_model_224_d*.pt
 src/data/feature_model_polyu*.pt

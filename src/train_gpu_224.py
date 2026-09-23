@@ -83,7 +83,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_amp = device == "cuda"
     print(f"[train] device={device}"
-          + (f" ({torch.cuda.get_device_name(0)})" if device == "cuda" else " — NO GPU; this will be slow at 224²"))
+          + (f" ({torch.cuda.get_device_name(0)})" if device == "cuda" else " - NO GPU; this will be slow at 224²"))
 
     xr = os.path.join(DATA, f"x_real_{args.img}.npy")
     if not os.path.exists(xr):

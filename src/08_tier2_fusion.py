@@ -15,7 +15,7 @@ flash-psi decision model (faithful to flash-psi/src/subsample.rs and ayan's flps
   q(H) = C(d-H, weight) / C(d, weight); the parties ACCEPT iff that count >= t. So the expected
   per-pair accept probability is exact in closed form (no Monte-Carlo needed for the sweep).
 
-Uses plain Super-Bit (center + Super-Bit projection + median), NO whitening — the Tier-1 winner.
+Uses plain Super-Bit (center + Super-Bit projection + median), NO whitening - the Tier-1 winner.
 GPU-accelerated embedding if available.
 """
 import os
@@ -126,7 +126,7 @@ def main():
         print(f"          H={imp_H[k]:>3}  {imp_pairs[k][0]}  vs  {imp_pairs[k][1]}")
 
     # ---------- (1) operating-point re-tune: t MUST stay small (Shamir cost), so sweep WEIGHT ----------
-    print("\n===== (1) flash-psi operating-point re-tune — t fixed small, tune weight (T=64) =====")
+    print("\n===== (1) flash-psi operating-point re-tune - t fixed small, tune weight (T=64) =====")
     print(f"  {'weight':>6} {'t':>3} {'TAR%':>8} {'FAR':>12}")
     best = None
     for t in (2, 3):
@@ -142,7 +142,7 @@ def main():
     _, w_opt, t_opt, tar_opt, far_opt = best
     print(f"  >> CHOSEN single-finger point: weight={w_opt}, t={t_opt}, T={T}  ->  "
           f"TAR={tar_opt*100:.2f}%  FAR={far_opt:.2e}")
-    print(f"     (old 96px point was weight=2, t=54 — wrong for the tighter 224 histograms)")
+    print(f"     (old 96px point was weight=2, t=54 - wrong for the tighter 224 histograms)")
 
     # ---------- (2) multi-finger fusion ----------
     print("\n===== (2) multi-finger fusion (q-of-K), single-finger op-point above =====")

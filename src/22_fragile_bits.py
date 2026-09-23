@@ -1,7 +1,7 @@
 """
 Step 22: Fragile/reliable-bit DIAGNOSTIC for the ortho-thermometer 128-bit code.
 
-Purpose (plan round-2, step 1 — prerequisite for the quantization-aware head):
+Purpose (plan round-2, step 1 - prerequisite for the quantization-aware head):
 quantify *why* the 128-bit code (EER 0.79%) sits so far above the float ceiling (0.33%).
 The hypothesis is that the code wastes most of its 128 bits: impostor Hamming sigma is
 ~14.6 vs a uniform code's 5.66, implying only a fraction of the bits are effectively

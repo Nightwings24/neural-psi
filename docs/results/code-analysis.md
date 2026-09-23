@@ -13,11 +13,11 @@ are fitted on the 4,800 training images only, disjoint from everything scored he
 
 ---
 
-## 1. The code is balanced — which is exactly why the problem is invisible
+## 1. The code is balanced - which is exactly why the problem is invisible
 
 | statistic | value |
 |---|---|
-| per-bit balance (fraction of 1s) | 0.466 – 0.540 across all 128 bits |
+| per-bit balance (fraction of 1s) | 0.466 - 0.540 across all 128 bits |
 | mean inter-bit \|ρ\| | **0.254** |
 | max inter-bit \|ρ\| | 0.858 |
 | bit pairs with \|ρ\| > 0.3 | **36.2%** |
@@ -30,8 +30,8 @@ Every bit is close to balanced, so the mean impostor Hamming distance comes out 
 code that violates the model badly**, which is what makes this failure mode worth publishing.
 
 The participation ratio is the honest statement of the code's capacity: the 128 bits behave like
-roughly **10 independent binary decisions**, not 128. That is expected — they are 128 projections
-of a 16-dimensional embedding — and it is the mechanism behind the wide impostor distribution.
+roughly **10 independent binary decisions**, not 128. That is expected - they are 128 projections
+of a 16-dimensional embedding - and it is the mechanism behind the wide impostor distribution.
 
 ## 2. But the accept model itself is accurate
 
@@ -60,7 +60,7 @@ dependence shows up in the distribution **of** `H`, not in `accept(H)`.
 
 Two consequences:
 
-1. The defect is isolated to one place — the impostor `H` distribution — rather than being spread
+1. The defect is isolated to one place - the impostor `H` distribution - rather than being spread
    through the analysis.
 2. The closed-form error rates in `operating-point.md`, which combine the measured `H` histograms
    with the hypergeometric `accept(H)`, are therefore trustworthy. Both halves are validated
@@ -70,7 +70,7 @@ Two consequences:
 
 Comparing a 128-bit Super-Bit code against a 16-bit ITQ code is a bit-budget mismatch, so ITQ is
 fitted at both 16 and 128 bits. Confidence intervals are 95% bootstrap over **identities**, not
-over pairs — pairs sharing a finger are not independent observations, and resampling pairs
+over pairs - pairs sharing a finger are not independent observations, and resampling pairs
 understates the interval.
 
 | Coder | Altered-Easy | Altered-Medium | Altered-Hard | H=0 collisions (of ~1.44M) |
@@ -79,7 +79,7 @@ understates the interval.
 | ITQ 128 | 4.55% [3.91, 5.31] | 7.11% [6.39, 7.73] | 9.06% [8.47, 9.75] | 517 |
 | ITQ 16 | 6.13% [5.54, 6.80] | 8.49% [7.84, 9.19] | 11.58% [10.56, 12.20] | 6,394 |
 
-Super-Bit wins at a matched bit budget — 1.89% against ITQ-128's 4.55% — so the advantage is not
+Super-Bit wins at a matched bit budget - 1.89% against ITQ-128's 4.55% - so the advantage is not
 an artifact of giving it 8× the bits. It also wins by **250×** on the metric that turns out to
 matter most: distinct fingers mapping to *identical* codes, which no protocol parameter can
 reject. ITQ-16's floor of 6,394 collisions in 1.44M pairs (4.4e-3) would be disqualifying on its
@@ -91,7 +91,7 @@ Degradation across the three alteration levels is graceful and monotone for all 
 
 `07_superbit_eer.py` reports **1.88%** using a sampled impostor set; the table above reports
 **1.89%** using all 1,200 × 1,199 pairs. These are the same quantity under two estimators and
-differ by 0.01 pp — far inside the confidence interval. Documents elsewhere in this repository
+differ by 0.01 pp - far inside the confidence interval. Documents elsewhere in this repository
 quote 1.88%; that number stands, and **[1.56, 2.20] is the interval to quote with it**.
 
 ---

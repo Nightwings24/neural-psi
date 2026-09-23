@@ -1,4 +1,4 @@
-# Real-crypto validation — Super-Bit codes through the actual flash-psi binary
+# Real-crypto validation - Super-Bit codes through the actual flash-psi binary
 
 Our held-out 224-model Super-Bit codes pushed through the REAL masked-OPRF + garbled-circuit
 + VOLE + Shamir protocol (`implementation/flash-psi/src/bin/fingerprint.rs`), compared against the
@@ -14,8 +14,8 @@ and the bridge is real-crypto-correct.
 |---|---|---|
 | TAR | 100.00% | 99.52% |
 | FAR | 4.43e-02 | 4.45e-02 |
-| genuine Hamming (mean/max) | 8.59 / 24 | — |
-| impostor Hamming (mean/min) | 64.35 / 4 | — |
+| genuine Hamming (mean/max) | 8.59 / 24 | - |
+| impostor Hamming (mean/min) | 64.35 / 4 | - |
 
 Accept-rate by Hamming bucket (real vs closed-form):
 

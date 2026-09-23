@@ -1,10 +1,10 @@
 """Statistical surrogate for the Bui-Cong (2025) Fuzzy-Labelled PSI matcher.
 
-This is NOT the cryptographic protocol — it is the *balls-and-bins* statistical model
+This is NOT the cryptographic protocol - it is the *balls-and-bins* statistical model
 the protocol's FPR/FNR are derived from, so we can measure how a given binariser performs
 end-to-end without standing up the OPRF/TLPSI/VOLE backend (that is Phase 3).
 
-Modelling assumption (the decisive one — see plan open question):
+Modelling assumption (the decisive one - see plan open question):
   * FLPSI sub-samples positions with a random permutation/mask, so the accept/reject
     decision depends ONLY on the TOTAL Hamming distance H between two codes, not on
     *which* bits differ. We verify this position-independence by Monte-Carlo below.

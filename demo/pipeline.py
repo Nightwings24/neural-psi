@@ -1,5 +1,5 @@
 """
-Neural-PSI presentation demo — backend pipeline.
+Neural-PSI presentation demo - backend pipeline.
 
 Wraps the real, validated components of the project so the Streamlit app stays
 presentation logic only:
@@ -111,7 +111,7 @@ VARIANT_LABEL = {
 
 
 # --------------------------------------------------------------------------- #
-# Stage 0 / Stage 1 — image loading and CNN embedding
+# Stage 0 / Stage 1 - image loading and CNN embedding
 # --------------------------------------------------------------------------- #
 def load_gray(path: str, size: int = IMG) -> np.ndarray:
     return np.asarray(Image.open(path).convert("L").resize((size, size)), dtype=np.uint8)
@@ -144,7 +144,7 @@ def embed_paths(model, device, paths, batch: int = 64) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------- #
-# Stage 2 — Super-Bit quantiser
+# Stage 2 - Super-Bit quantiser
 # --------------------------------------------------------------------------- #
 def fit_quantizer(model, device, calibration_paths, seed: int = 0):
     """
@@ -160,7 +160,7 @@ def fit_quantizer(model, device, calibration_paths, seed: int = 0):
 
 
 # --------------------------------------------------------------------------- #
-# Stage 3 — Fuzzy-Labelled PSI decision
+# Stage 3 - Fuzzy-Labelled PSI decision
 # --------------------------------------------------------------------------- #
 def q_clean(h: int, weight: int, d: int = D_BITS) -> float:
     """P[one weight-subset of d positions avoids all h mismatched bits]."""

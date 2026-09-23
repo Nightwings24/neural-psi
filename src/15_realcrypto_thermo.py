@@ -121,7 +121,7 @@ def main():
         results.append(validate(name, enr, qry, B, nq, args.weight, args.t, rng))
 
     print("\n" + "=" * 78)
-    print("  REAL-CRYPTO head-to-head — same held-out fingers, same op-point, actual binary")
+    print("  REAL-CRYPTO head-to-head - same held-out fingers, same op-point, actual binary")
     print("=" * 78)
     print(f"  {'bridge':<12}{'real TAR':>10}{'real FAR':>12}{'pred FAR':>12}{'genH':>7}{'impH':>7}{'ms/run':>9}")
     for r in results:
@@ -136,7 +136,7 @@ def main():
 
     rep = os.path.abspath(os.path.join(HERE, "..", "docs", "results", "real-crypto-thermo.md"))
     with open(rep, "w") as f:
-        f.write("# Real-crypto head-to-head — Super-Bit vs L2-thermometer bridge\n\n")
+        f.write("# Real-crypto head-to-head - Super-Bit vs L2-thermometer bridge\n\n")
         f.write(f"Both bridges' codes for the SAME {B} held-out fingers pushed through the actual flash-psi\n")
         f.write(f"binary (masked-OPRF+GC+VOLE+Shamir). Op-point w={args.weight}, t={args.t}, T={T}, d={D}.\n")
         f.write(f"{results[0]['n_gen']} genuine + {results[0]['n_imp']} impostor decisions per bridge.\n\n")

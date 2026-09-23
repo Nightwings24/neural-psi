@@ -1,11 +1,11 @@
-"""NeuralPSI binariser — 16-D CNN embedding -> 128-bit Hamming code for Fuzzy-Labelled PSI.
+"""NeuralPSI binariser - 16-D CNN embedding -> 128-bit Hamming code for Fuzzy-Labelled PSI.
 
 This turns the Blind-Touch per-fingerprint embedding ``e in R^16`` into a binary code
 ``b in {0,1}^128`` whose *Hamming* distance tracks the model's *discriminative* similarity,
 so the code can be matched by a fuzzy-labelled PSI backend (Bui-Cong 2025) instead of the
 homomorphic-encryption layer of Blind-Touch.
 
-Pipeline (every stage is a FIXED, PUBLIC affine-then-sign map — no learned non-linearity):
+Pipeline (every stage is a FIXED, PUBLIC affine-then-sign map - no learned non-linearity):
 
     e   = W^T x_hat + bias16                produced upstream (see extract_embedding)
     e0  = e - mu                            centering (public population mean)
@@ -39,7 +39,7 @@ from dataclasses import dataclass, asdict
 
 import numpy as np
 
-CODE_LEN = 128   # d  — FLPSI code length
+CODE_LEN = 128   # d  - FLPSI code length
 IN_DIM = 16      # dimensionality of the CNN embedding e
 
 
@@ -186,7 +186,7 @@ def hamming(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def separation(genuine_h: np.ndarray, impostor_h: np.ndarray) -> float:
-    """d' = (mu_imp - mu_gen) / sqrt((var_gen + var_imp) / 2)  — higher is better."""
+    """d' = (mu_imp - mu_gen) / sqrt((var_gen + var_imp) / 2)  - higher is better."""
     g = np.asarray(genuine_h, dtype=np.float64)
     i = np.asarray(impostor_h, dtype=np.float64)
     denom = np.sqrt((g.var() + i.var()) / 2.0)
