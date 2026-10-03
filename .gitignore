@@ -79,3 +79,12 @@ logs/
 paper/*.pdf
 paper/*.bbl
 paper/*.blg
+
+# ---- LaTeX classes/styles fetched for local build (not redistributable / regenerable) ----
+paper/llncs.cls
+paper/splncs04.bst
+paper/aliascnt.sty
+paper/booktabs.sty
+paper/booktabs.dtx
+paper/booktabs.ins
+paper/*.log

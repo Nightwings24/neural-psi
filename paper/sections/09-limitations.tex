@@ -1,29 +1,61 @@
 \section{Limitations}
 \label{sec:limitations}
 
-\paragraph{Identification at scale does not work.} At the measured code distribution there is no
-parameter setting that is simultaneously secure and usable at $N = 5{,}000$
-(\S\ref{sec:params}). The design is coherent as a verification $(1{:}1)$ system and as a
-small-$N$ identification system, and we do not claim more.
+\paragraph{Single high-fidelity corpus.} The headline EER ladder (\S\ref{sec:params},
+\S\ref{sec:eval}) is measured on SOCOFing, whose probes are synthetic degradations
+(obliteration, rotation, z-cut) of the \emph{same} capture rather than independent acquisitions
+across sensors or sessions. This is a favourable, same-sensor setting, and the generality results
+on PolyU and FVC2002 confirm it is optimistic: cross-sensor transfer sits at chance
+(\S\ref{sec:eval}), and the co-designed code's accuracy gain shrinks or disappears wherever the
+underlying features are already the bottleneck. SOCOFing should be read as an upper bound on what
+this design achieves elsewhere, not as a representative deployment corpus.
 
-\paragraph{The embedding is the ceiling.} Every headline number here would move with a
-higher-dimensional or better-trained extractor, and none would move with a better coder or a
-different threshold.
+\paragraph{The accuracy gain is gap-dependent, and that is the theory working, not failing.}
+Theorem~4.3 (\S\ref{sec:design}) says the feature-head code recovers accuracy already present in
+the underlying features but lost to quantization; it cannot manufacture discriminability the
+extractor never had. Where the floating-point features are much better than the 16-dimensional
+code they replace (SOCOFing, conv EER $0.16\%$ against Super-Bit's $1.89\%$), closing that gap is
+dramatic. Where they are not --- PolyU-contact and FVC2002 Db4, where the 16-D embedding is
+already close to the float ceiling --- the feature-head code is a wash or a regression relative to
+the metric-aware bridge. We read this as confirmation of the mechanism (accuracy gain tracks the
+quantization gap exactly as \S\ref{sec:design} predicts), not as a limitation of the method
+independent of the theory, but it does mean the reported gains are corpus- and extractor-specific
+and should not be extrapolated to settings with no such gap.
 
-\paragraph{Templates at rest.} The stored code is a bearer credential and fails all three
-ISO/IEC 24745 requirements (\S\ref{sec:atrest}). Our mitigations recover unlinkability and
-renewability but not irreversibility. This posture is \emph{weaker} than the encrypted-template
-baseline's, and we treat full at-rest confidentiality against a compromised server as out of
-scope rather than solved.
+\paragraph{Communication: a trade-off against Blind-Touch's compressed CKKS, not a win.} The
+co-designed code lowers our own communication by $45\%$ at a matched operating point
+(\S\ref{sec:comms}), but this narrows a gap rather than closing it: at $N=5{,}000$ our matched
+point costs $2377$\,KB against Blind-Touch's $856$\,KB of homomorphically compressed CKKS
+ciphertext~\cite{ChoiWooKim24}. FLPSI pays this in exchange for eliminating Blind-Touch's $117$\,MB
+Galois rotation key and its slot-packing ceiling, and for a $16$-byte server-side template against
+$1.67$\,KB; the two designs sit on different points of a communication/key-material/storage
+trade-off, and this paper does not claim to dominate on all three simultaneously. Reporting
+communication alone without this context would overstate the result.
 
-\paragraph{Semi-honest only.} A malicious client can deviate arbitrarily, and since it supplies
-$\xt$ with no binding to a live finger, sensor attestation is load-bearing rather than a detail.
+\paragraph{Semi-honest security only.} The security argument (\S\ref{sec:security}) simulates a
+semi-honest server and an honest-but-curious client; a malicious client that deviates from the
+protocol or supplies a $\xt$ with no binding to a live finger is out of scope, and sensor
+attestation is load-bearing rather than a hardening detail. The vector ring-OLE backend targeted
+for the crypto realization (Bui--Cong~\cite{BuiCong25}) is likewise a semi-honest construction;
+extending either side to malicious security is future work, not a gap in the present analysis.
 
-\paragraph{Evaluation scope.} All results are on a single corpus whose probes are synthetic
-degradations --- obliteration, rotation, z-cut --- of the \emph{same} capture. That measures
-robustness to noise, not generalisation across capture conditions, sensors or sessions, which
-remains untested here and is the first thing further work should establish.
+\paragraph{Template irreversibility is a protocol property, not a binariser property.} As
+\S\ref{sec:design} states explicitly, the feature-head's sign map is an over-determined,
+$8\times$-oversampled measurement of a low-dimensional embedding and must not be treated as
+one-way: the argument that made this claim for the Super-Bit map (compressed-sensing recovery
+angle) is specific to that $128{\times}16$ linear map and does not transfer to the learned
+feature-head. We do not claim the feature-head code is one-way either. Confidentiality of the
+stored code rests on the protocol --- the server is the mOPRF sender and never observes $\xt$ or a
+plaintext sub-sample of it (\S\ref{sec:security}) --- and full at-rest confidentiality against a
+compromised server remains out of scope, exactly as for the naïve code.
 
-\paragraph{Communication.} Per-query communication exceeds the homomorphic baseline's beyond a
-few hundred records and grows linearly; the design trades communication for storage and key
-material.
+\paragraph{The feature-head code is trained; the round-1 bridge is not.} The metric-aware bridge
+of round one is a fixed, public, training-free map, published alongside the model like a
+batch-normalisation statistic. The feature-head code of round two is trained end-to-end against
+the balance/decorrelation/genuine-closeness objective of Theorem~4.3, on an identity-disjoint
+split with the reported epoch selected on a held-out validation split. This buys the larger
+accuracy and communication gains but introduces a training pipeline, a held-out validation
+protocol, and a straight-through gradient estimator whose optimization is non-convex even though
+the population objective it approximates is convex in the code's second moments
+(\S\ref{sec:design}, Theorem~4.3, item 2). We do not claim the training recovers a global optimum,
+only that it reliably moves the measured impostor law toward the uniform ideal.

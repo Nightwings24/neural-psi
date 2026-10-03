@@ -12,11 +12,11 @@ the code length and never a distance bound.}
 \begin{tabular}{@{}llll@{}}
 \toprule
 $d$ & code length, $=128$ & $N$ & database size (records) \\
-$T$ & sub-samples per query, $=64$ & $w$ & positions per sub-sample mask \\
-$\theta$ & sub-sample collisions to accept & $t$ & mismatches tolerated per sub-sample \\
-$H$ & Hamming distance between codes & $q(H)$ & per-sub-sample collision probability \\
-$\mathbf{e}\in\mathbb{R}^{16}$ & CNN embedding & $\xt,\yt\in\{0,1\}^{d}$ & client, server codes \\
-$\mathbf{P},\boldsymbol{\mu},\boldsymbol{\tau}$ & public quantiser constants &
+$T$ & sub-samples per query & $w$ & positions per sub-sample mask \\
+$t$ & sub-sample collisions to accept & $H$ & Hamming distance between codes \\
+$q(H)$ & per-sub-sample collision probability & $K$ & number of colliding sub-samples \\
+$\mathbf{e}$ & CNN embedding (real-valued) & $\xt,\yt\in\{0,1\}^{d}$ & client, server codes \\
+$P_{\mathrm{gen}}, P_{\mathrm{imp}}$ & genuine, impostor Hamming laws &
   $m_j$ & the $j$-th sub-sampling mask \\
 $\ell_i$ & label of record $i$ & $\mathbb{F}$ & field for secret sharing \\
 $\lambda,\kappa$ & computational, statistical security & $S_i$ & colliding mask set for record $i$ \\
@@ -36,17 +36,24 @@ per query ciphertext, and a database organised around a 512-users-per-ciphertext
 
 A Siamese network~\cite{ChoiWooKim24,KimOhKim20,YangEtAl20} maps two images through a shared
 convolutional trunk trained so that same-identity pairs land close. We reuse this unchanged: the
-trunk produces $\mathbf{e} \in \mathbb{R}^{16}$, trained with pairwise binary cross-entropy on
+trunk produces a real-valued embedding $\mathbf{e}$, trained with pairwise binary cross-entropy on
 identity-disjoint splits. The architecture is not a contribution here; what matters is only that
-the output is a low-dimensional real vector whose cosine similarity tracks identity.
+the output is a real vector whose distance under the extractor's training metric tracks identity,
+and that it must be turned into a fixed-length binary code before a fuzzy-PSI matcher can consume
+it.
 
-\subsection{Fuzzy-labelled PSI}
+\subsection{Fuzzy-labelled PSI: functionality and accept model}
 \label{sec:flpsi-prelim}
 
-Fuzzy-labelled PSI~\cite{BuiCong25} lets a client holding $\xt \in \{0,1\}^{d}$ learn the label
+Fuzzy-labelled PSI (FLPSI) was introduced by Uzun et al.\ for private real-time biometric
+search~\cite{UzunEtAl21}: it lets a client holding $\xt \in \{0,1\}^{d}$ learn the label
 $\ell_i$ of any server record $\yt_i$ within a Hamming ball of the query, while the server learns
-nothing. \emph{The construction is due to Bui and Cong; we use it as a black box and restate only
-what our parameter analysis in \S\ref{sec:params} depends on.} It composes two primitives.
+nothing beyond whether a match occurred. We take this functionality and its accept model from
+Uzun et al.; the concrete efficient backend we use for the crypto realisation is Bui and Cong's
+vector ring-OLE construction~\cite{BuiCong25}, itself built on the VOLE-PSI
+line~\cite{RindalSchoppmann21,RaghuramanRindal22} and silent OT/PCG~\cite{BoyleEtAl19}. We
+restate the accept model as a black box, only as far as our design objective in
+\S\ref{sec:design} depends on it.
 
 A \textbf{masked OPRF} lets the two parties evaluate a keyed PRF on sub-sampled positions of
 their inputs, so that equality of the PRF images certifies equality on those positions without
@@ -54,16 +61,38 @@ revealing the underlying bits. The parties agree on $T$ public masks $m_j \in \{
 weight $w$; sub-sample $j$ of a code is its restriction to the positions selected by $m_j$.
 
 A \textbf{threshold labelled PSI} then converts collisions into a label. The server splits each
-$\ell_i$ into Shamir shares~\cite{Shamir79} with reconstruction threshold $\theta$, attaches one
-share per mask, and delivers them through a polynomial encoding evaluated obliviously via vector
-ring-OLE, itself built from silent VOLE~\cite{BoyleEtAl19,RindalSchoppmann21} under LPN. A client
-whose code collides on at least $\theta$ masks recovers $\theta$ shares and reconstructs
-$\ell_i$; a client with fewer collisions learns nothing about it. Two codes at Hamming distance
-$H$ therefore collide on a given mask with probability $q(H) = \binom{d-H}{w}/\binom{d}{w}$, and
-acceptance follows a binomial tail --- the model we develop and test in \S\ref{sec:params}.
+$\ell_i$ into Shamir shares~\cite{Shamir79}, attaches one share per mask, and delivers them
+through a polynomial encoding evaluated obliviously via the OLE/VOLE backend above. A client
+whose code collides on at least $t$ masks recovers enough shares to reconstruct $\ell_i$; a
+client with fewer collisions learns nothing about it.
 
-Communication is linear in $N$ with no packing ceiling, and the only key material is a PRF key
-held by the server.
+\paragraph{The accept-probability functional.} Two codes at Hamming distance $H$ collide on a
+given mask, drawn as a uniformly random $w$-subset of the $d$ positions, with exact (hypergeometric)
+probability
+\[
+q(H) \;=\; \binom{d-H}{w}\Big/\binom{d}{w} \;\approx\; \left(1 - \frac{H}{d}\right)^{w}
+\qquad (w \ll d).
+\]
+The $T$ sub-samples are drawn independently, so the number of colliding masks $K$ satisfies
+$K \mid H \sim \mathrm{Binomial}(T, q(H))$, and the client accepts iff at least $t$ masks
+collide:
+\[
+\Pr[\text{accept} \mid H] \;=\; \Pr[K \ge t] \;=\; \sum_{k=t}^{T} \binom{T}{k} q(H)^{k}\,
+\bigl(1-q(H)\bigr)^{T-k}.
+\]
+Writing $P_{\mathrm{gen}}$ and $P_{\mathrm{imp}}$ for the distribution of $H$ over genuine and
+impostor pairs respectively, the aggregate error rates are exact functionals of these two
+histograms:
+\[
+\mathrm{FAR} = \sum_{H} P_{\mathrm{imp}}(H)\,\Pr[\text{accept}\mid H], \qquad
+\mathrm{FRR} = 1 - \sum_{H} P_{\mathrm{gen}}(H)\,\Pr[\text{accept}\mid H].
+\]
+This is a \emph{label-only} disclosure model throughout: a match reveals $\ell_i$ and nothing
+else; a non-match reveals nothing. Communication is linear in $N$, scaling with $T$, and the only
+key material is a PRF key held by the server; there is no packing ceiling and no Galois key.
+\S\ref{sec:design} develops the design consequence of this accept model --- that FAR, FRR and $T$
+are all governed by one statistic of $P_{\mathrm{imp}}$ --- into the coupling theorem that is this
+paper's core contribution.
 
 \subsection{Binary codes from real vectors}
 
@@ -74,5 +103,6 @@ LSH}~\cite{JiEtAl12} orthonormalises the projections in blocks equal to the inpu
 which leaves the estimator unbiased while strictly reducing its variance at the acute angles that
 separate genuine from impostor pairs; at block size one it degenerates to SimHash.
 \textbf{ITQ}~\cite{GongLazebnik11} instead learns a rotation minimising quantisation loss, and is
-data-dependent. We use Super-Bit and compare against ITQ at a matched bit budget in
-\S\ref{sec:eval}.
+data-dependent. These are the classical, matcher-agnostic bridges; \S\ref{sec:design} shows why,
+under FLPSI's accept model, the choice of bridge is not matcher-agnostic in effect, and derives
+the objective a bridge should be designed against instead.

@@ -1,0 +1,12 @@
+{
+  "code": "feature-head-128",
+  "n_ids": 1200,
+  "imp_mean": 64.0854760911871,
+  "imp_sd": 6.718271163546274,
+  "gen_mean": 15.770833333333334,
+  "n_eff_daugman": 90.74947379929912,
+  "n_eff_participation_ratio": 84.62596729587852,
+  "sigma_uniform_ref": 5.656854249492381,
+  "h0_impostor_collisions": 0,
+  "n_impostor_pairs": 1438800
+}

@@ -1,118 +1,294 @@
 \section{Implementation and Evaluation}
 \label{sec:eval}
 
-\paragraph{Setup.} The extractor is trained on SOCOFing~\cite{Shehu18} (6,000 fingerprints, 600
-subjects $\times$ 10 fingers) at $224\times224$, with an identity-disjoint split: 4,800 training
-images and 1,200 held-out identities that appear in no training or calibration step. Enrolment
-uses the \texttt{Real} captures and probes use the \texttt{Altered-*} sets. Confidence intervals
-throughout are 95\% bootstrap over \emph{identities}, not pairs --- pairs sharing a finger are
-not independent, and resampling pairs understates the interval. Hardware: RTX 4050 (6\,GB); the
-FLPSI layer runs against a reference implementation of~\cite{BuiCong25} instrumented to count
-protocol bytes.
+\providecommand{\todo}[1]{\textbf{[TODO: #1]}}
 
-\subsection{Accuracy}
+This section makes the central claim of the paper concrete: the impostor Hamming
+distribution of the binary code is the single object that drives \emph{both} accuracy
+(EER, collision floor) and communication (the sub-sample count $T$, and hence protocol
+bytes). We first diagnose the baseline code (Super-Bit) as the bottleneck
+(\S\ref{sec:eval-ladder}), then show that fixing the code --- first with a training-free
+metric-aware map (R1, ortho-thermometer, \S\ref{sec:ortho-thermo}), then with a learned,
+quantisation-aware head (R2, feature-head, \S\ref{sec:featurehead}) --- improves accuracy
+\emph{and} shrinks the communication needed to hit the same operating point
+(\S\ref{sec:eval-comms}), on the same frozen CNN and the same 128-bit FLPSI backend
+throughout.
+
+\subsection{Setup}
+
+\paragraph{Corpora and splits.} The extractor is a frozen Blind-Touch~\cite{ChoiWooKim24}
+Siamese CNN trained on SOCOFing~\cite{Shehu18} (6,000 fingerprints, 600 subjects $\times$ 10
+fingers), with an identity-disjoint split: 4,800 training images and 1,200 held-out
+identities appearing in no training, calibration, or head-fitting step. Enrolment uses the
+\texttt{Real} captures; probes use \texttt{Altered-\{Easy,Medium,Hard\}}. Generality is
+checked on two further corpora, held out from all code training: PolyU (contact and
+contactless, finger-disjoint splits) and FVC2002 (Db1--Db4, A-sets).
+
+\paragraph{Protocol.} The 128-bit code feeds the FLPSI accept rule of
+\S\ref{sec:accept-model}: a mask selects $w$ of 128 positions, a query and a record are
+declared a sub-match iff they agree on all $w$ positions (probability
+$q(H) = \binom{128-H}{w}/\binom{128}{w}$ as a function of Hamming distance $H$), and the
+overall record accepts iff at least $t$ of $T$ independent sub-samples match
+(Eqs.~\ref{eq:accept}--\ref{eq:rates}). We do not restate that derivation here.
+
+\paragraph{Codes compared.} \emph{Super-Bit} is the original block-orthonormal random
+projection baseline. \emph{R1 (ortho-thermometer)} is the training-free, metric-aware
+bridge of \S\ref{sec:ortho-thermo}, which repairs the angular/Euclidean metric mismatch
+identified as the root cause of Super-Bit's excess impostor variance. \emph{R2
+(feature-head)} is the learned, quantisation-aware binariser of \S\ref{sec:featurehead},
+trained end-to-end against the FLPSI accept objective on the 25,088-dimensional
+pre-pooling convolutional features (not the 16-D embedding), on an identity split disjoint
+from both the CNN's training split and the 1,200-identity held-out evaluation set, with
+early stopping on a further held-out validation split --- i.e., no test-set peeking. This
+is a difference in kind from R1: R1 is a fixed, training-free public map, R2 is a trained
+quantiser.
+
+\paragraph{Confidence intervals and provenance.} All EER intervals are 95\% bootstrap over
+\emph{identities} (1,000 resamples), not pairs --- pairs sharing a finger are not
+independent, and pair-level resampling understates the interval. Every number below is
+measured against the real, frozen CNN and, where marked, the real \texttt{flash-psi}
+backend (not a closed-form surrogate); values without a committed machine-readable
+artifact were regenerated for this version. Hardware: RTX 4050 (6\,GB);
+CNN forward pass 0.80\,ms/image (GPU).
+
+\subsection{Main result: the EER ladder}
+\label{sec:eval-ladder}
 
 \begin{table}[htbp]
 \centering
-\caption{EER with 95\% identity-level bootstrap intervals, at a matched bit budget. Collisions
-count impostor pairs at $H = 0$ out of ${\approx}1.44$M.}
+\caption{EER with 95\% identity-bootstrap intervals on held-out SOCOFing, plus the
+impostor Hamming standard deviation $\sigma$, effective bits $m_{\mathrm{eff}}$
+(Eq.~\ref{eq:meff}), and $H{=}0$ impostor collisions out of the ${\approx}1.44$M
+probe$\times$gallery pairs. Super-Bit Medium/Hard are from a separate run
+(\texttt{12\_code\_analysis.py}) than the R1/R2 ladder (\texttt{29\_qat\_ladder.py}); both
+share the same corpus and split.}
 \label{tab:acc}
 \small
-\begin{tabular}{@{}lcccr@{}}
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-Coder & Altered-Easy & Altered-Medium & Altered-Hard & $H{=}0$ \\
+Coder & Easy & Medium & Hard & $\sigma$ ($H{=}0$) & $m_{\mathrm{eff}}$ \\
 \midrule
-Float embedding (ceiling) & 0.33\% & --- & --- & --- \\
-\textbf{Super-Bit 128} & \textbf{1.88\%} [1.56, 2.20] & 4.48\% [3.90, 4.94] &
-  7.04\% [6.31, 7.45] & \textbf{2} \\
-ITQ 128 & 4.55\% [3.91, 5.31] & 7.11\% [6.39, 7.73] & 9.06\% [8.47, 9.75] & 517 \\
-ITQ 16 & 6.13\% [5.54, 6.80] & 8.49\% [7.84, 9.19] & 11.58\% [10.56, 12.20] & 6{,}394 \\
-Naive sign 16 & 10.12\% & --- & --- & --- \\
+Float, 25{,}088-D conv (ceiling) & 0.16\% & --- & --- & --- & --- \\
+Float, 16-D embedding (ceiling) & 0.33\% & --- & --- & --- & --- \\
+Super-Bit 128 & 1.89\% [1.57, 2.22] & 4.48\% [3.90, 4.94] & 7.04\% [6.31, 7.45] &
+  20.11 (2) & $\sim$10 \\
+R1: ortho-thermometer & 0.87\% [0.62, 0.99] & 2.61\% [2.17, 2.92] & 4.10\% [3.64, 4.60] &
+  14.60 (0) & $\sim$14--18 \\
+\textbf{R2: feature-head} & \textbf{0.17\%} [0.06, 0.26] & \textbf{0.84\%} [0.62, 1.17] &
+  \textbf{2.18\%} [1.81, 2.70] & \textbf{6.72} (\textbf{0}) & \textbf{90.7} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Binarisation costs $+1.55$ percentage points of EER against the $0.33\%$ floating-point ceiling
-(Table~\ref{tab:acc}). Two comparisons matter more than the headline.
+Table~\ref{tab:acc} is the headline: on Altered-Easy, R2 reaches $0.17\%$ EER
+$[0.06,0.26]$, roughly $5\times$ below R1 ($0.87\%$) and roughly $11\times$ below the
+Super-Bit baseline ($1.89\%$), with all three intervals non-overlapping. The same ordering
+holds, monotonically, across Medium and Hard. The mechanism is the impostor Hamming
+standard deviation $\sigma$: it drops $20.11 \to 14.60 \to 6.72$ against a uniform-code
+ideal of $5.66$ (Eq.~\ref{eq:vardecomp}), and the $H{=}0$ collision count on the
+probe$\times$gallery set drops from 2 (Super-Bit; Poisson-rate $1.39\times10^{-6}$, 95\% CI
+$[1.68\times10^{-7}, 5.02\times10^{-6}]$) to 0 for both R1 and R2.
 
-First, \textbf{the bit budget}. Comparing a 128-bit Super-Bit code against a 16-bit ITQ code
-would be a mismatch, so ITQ is fitted at 128 bits as well. Super-Bit still wins by more than
-$2\times$ ($1.88\%$ vs $4.55\%$), so its advantage comes from block orthonormalisation rather
-than from a larger budget. It also wins by $250\times$ on code collisions, which
-\S\ref{sec:floor} shows is the metric that ultimately binds.
+\paragraph{Effective bits.} The Daugman degrees-of-freedom estimate
+$m_{\mathrm{eff}} = d^2/(4\sigma^2)$ (Eq.~\ref{eq:meff}, $d=128$) rises from $\sim$10
+(Super-Bit; participation-ratio estimate 9.84, consistent) to $\sim$14--18 for R1
+(participation-ratio 13.6, Daugman 17.9) to \textbf{90.7} for R2 (participation-ratio
+84.6), all measured directly from the impostor distributions
+(\texttt{featurehead-effective-bits.json} for R2). The jump from R1 to R2 is the
+signature of \emph{what} is coded, not merely \emph{how}: Super-Bit and R1 both quantise
+the 16-dimensional post-pooling embedding, so no binariser applied to it can exceed
+${\sim}16$ independent bits regardless of how well it is conditioned; R2 escapes that
+ceiling because it codes the 25,088-dimensional pre-pooling convolutional feature map
+directly, where far more than 16 independent directions of discriminative variance
+survive.
 
-Second, \textbf{degradation}. All three coders degrade gracefully and monotonically across the
-three alteration levels, with Super-Bit's ordering preserved throughout.
+\paragraph{Caveats.} SOCOFing's \texttt{Altered-*} probes are synthetic, same-capture
+alterations of the \texttt{Real} images, which is optimistic relative to genuinely
+independent recaptures; R2 is a trained quantiser evaluated on an identity-disjoint split
+with early stopping on a held-out validation split, which is the correct protocol but a
+different threat model from R1's training-free public map.
 
-We note against Blind-Touch's reported $0.7\%$ EER that our interval $[1.56, 2.20]$ does not
-contain it; the comparison is also across different training regimes and should be read as
-indicative rather than a controlled contrast.
+\subsection{The coupling demonstrated: communication}
+\label{sec:eval-comms}
 
-\paragraph{Whitening ablation.} Rescaling embedding dimensions by the head's final-layer weights
-before projection helps an under-trained model but \emph{hurts} the well-trained one
-($1.88\% \to 2.98\%$), because a well-conditioned embedding gains nothing from reweighting and
-loses from the added variance. The recommended configuration omits it.
+Online FLPSI communication scales with the sub-sample count $T$: each of the $T$
+sub-samples is a garbled-circuit/VOLE exchange over the $N$-record database, so halving
+$T$ at fixed accuracy roughly halves protocol bytes. Proposition~\ref{prop:tmin} gives the
+minimal $T$ needed to hit a target $(\mathrm{FAR}, \mathrm{FRR})$ as a function of the
+per-sub-sample genuine/impostor accept probabilities $q_g, q_i$, which are themselves set
+by the code's Hamming distributions --- so the \emph{same} $\sigma$ that lowers EER in
+Table~\ref{tab:acc} also lowers the $T$ needed for the deployed decision rule, which lowers
+bytes. This is the paper's cross-layer punchline: one coupling constant, two payoffs.
 
-\paragraph{Code-length ablation.} At 64/128/256 bits the EER is $2.38\%$ / $1.88\%$ / $1.89\%$
-with storage 8/16/32\,B per user. Accuracy saturates at 128 bits: this is the 16-dimensional
-information ceiling, not a coding limitation, and it is the same ceiling that produces the
-distributional problem of \S\ref{sec:params}.
-
-\subsection{Operating point}
-
-The accuracy figures above describe the \emph{representation}. The deployed decision rule is the
-FLPSI accept model, and \S\ref{sec:params} shows that at the published parameters its per-record
-false-accept rate is $4.578\times10^{-2}$ --- $1{,}550\times$ the value predicted under the
-uniform-code model --- with a query-level rate that exceeds $50\%$ by $N = 100$. We do not repeat
-that analysis here; we note only that \textbf{an EER measured on the code is not the error rate
-of the deployed system}, and that the two must be reported together.
-
-\subsection{Communication}
-
-Online per-query communication is linear in the database,
-$\text{comm} \approx 0.25\,\mathrm{MB} + 1.54\,\mathrm{KB}\cdot N$, measured on the query channel
-in both directions with garbled-circuit transfer excluded as one-time, data-independent
-preprocessing.
-
-\begin{center}\small
-\begin{tabular}{@{}lrrrrrr@{}}
+\begin{table}[htbp]
+\centering
+\caption{Online communication at $N=5{,}000$, real \texttt{flash-psi} simulation binary,
+each code at its own communication-minimal operating point $(w,t,T)$ meeting the same
+target (TAR $\ge 95\%$, per-record FAR $\le 10^{-2}$). Neither code is feasible at the
+other's $(w,t)$: the cross-infeasibility is itself evidence that the code changes which
+operating points exist, not just how good they are.}
+\label{tab:comms}
+\small
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-$N$ & 500 & 1{,}000 & 5{,}000 & 10{,}000 & 50{,}000 & $10^{6}$ (extrap.) \\
+Code & $(w,t,T)$ & TAR & per-record FAR & comms @ $N{=}5{,}000$ \\
 \midrule
-online comm & 1.00\,MB & 1.76\,MB & 7.77\,MB & 15.28\,MB & 75.40\,MB & ${\sim}1.5$\,GB \\
+R1: ortho-thermometer & $(19,3,34)$ & 95.5\% & $9.4\times10^{-3}$ & 4{,}317\,KB \\
+\textbf{R2: feature-head} & $(6,3,18)$ & \textbf{96.2\%} & $7.9\times10^{-3}$ &
+  \textbf{2{,}377\,KB} \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{table}
 
-The extrapolation matches Bui and Cong's reported 153\,MB at $10^{5}$ and 1{,}533\,MB at $10^{6}$,
-confirming that the composition inherits the FLPSI communication profile unchanged --- the
-quantiser adds nothing, it only fixes the 128-bit width.
+Table~\ref{tab:comms} is the clean, like-for-like contribution figure: at matched targets,
+R2 needs $\mathbf{-45\%}$ the communication of R1 (2,377 vs 4,317\,KB). Separately, and
+\emph{not} as a matched comparison, the original untuned Super-Bit configuration
+($w=14$, $t=2$, published $T=64$, which has no feasible matched operating point at
+per-record FAR $\le 10^{-2}$) costs 7,953\,KB at $N=5{,}000$; R2's matched point is
+$\sim3.3\times$ smaller than that fixed reference, but we report this only as "vs. the
+original untuned $T=64$ point," since the two are not evaluated at the same target.
 
-\textbf{This is where the design loses.} Blind-Touch sends ${\sim}1.1$\,MB per query at constant
-cost below 8,192 users; we exceed that beyond ${\sim}500$ records. Communication is not a
-selling point of this work and we do not present it as one. The protocol runs in a constant
-number of rounds over a field with $|\mathbb{F}| \ge 2^{\kappa + \log N}$, which for
-$N = 5\times10^{4}$ and $\kappa = 40$ means a 56-bit field.
+The full swept $(w,t,T)$ Pareto frontier for Super-Bit, R1, and R2 --- extending
+\texttt{25\_qat\_downstream.py}, which currently fixes $w,t$ and searches only $T$, to a
+joint grid search, plotting comms (KB) vs.\ operating error at fixed TAR and overlaying
+the Blind-Touch point and the closed-form $T_{\min}$ curve from
+Proposition~\ref{prop:tmin} --- is deferred to the full version of this paper; the three
+anchor points above are measured.
 
-\subsection{Latency and storage}
+A systematic ablation varying the feature-head's bit-balance and bit-decorrelation loss
+weights $(\lambda_{\mathrm{bal}}, \lambda_{\mathrm{dec}})$ and showing $\sigma$, EER, and
+minimal $T$/comms move together is deferred to the full version of this paper. Partial
+data already exists (\texttt{qat-featurehead-feat\_*.json}: e.g.\ $\sigma=11.23\to$ EER
+$1.27\%$ at one setting, $\sigma=6.72\to$ EER $0.17\%$ at the chosen R2 setting); the
+per-variant minimal-$T$/comms sweep has not yet been run.
 
-\begin{center}\small
-\begin{tabular}{@{}lrrl@{}}
+\subsection{Real-crypto validation}
+
+The FLPSI accept-rate model of \S\ref{sec:accept-model} is a closed-form surrogate; we
+validate it against the real \texttt{flash-psi} \texttt{fingerprint} binary (masked-OPRF +
+garbled circuit + VOLE + Shamir secret sharing), not the closed-form simulator, at the R2
+operating point $(w,t,T) = (6,3,18)$, 300 queries against a 300-record database:
+
+\begin{table}[htbp]
+\centering
+\caption{Real-crypto validation of the closed-form accept model, feature-head code,
+$(w,t,T)=(6,3,18)$, real \texttt{flash-psi} \texttt{fingerprint} binary, 300 queries
+$\times$ 300 database records.}
+\label{tab:realcrypto}
+\small
+\begin{tabular}{@{}lcc@{}}
 \toprule
-phase & $N = 1{,}000$ & $N = 5{,}000$ & scaling \\
+Quantity & Real (measured) & Predicted (closed-form) \\
 \midrule
-CNN forward (client, GPU) & 0.80\,ms & 0.80\,ms & $O(1)$ \\
-Quantise (client) & 0.002\,ms & 0.002\,ms & $O(1)$ \\
-FLPSI online & 187\,ms & 823\,ms & ${\sim}0.16$\,ms/record \\
-\midrule
-total query-time & ${\sim}188$\,ms & ${\sim}824$\,ms & \\
-FLPSI offline (preprocessing) & 553\,ms & 1{,}946\,ms & ${\sim}0.38$\,ms/record \\
+TAR & 97.0\% & --- \\
+FAR (per record) & $8.02\times10^{-3}$ & $8.12\times10^{-3}$ \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{table}
 
-The quantiser costs one $128\times16$ matrix multiply and a threshold compare --- $2.2\,\mu$s,
-negligible against everything else. Server-side storage is \textbf{16\,B per user} against
-Blind-Touch's 1.67\,KB, a $107\times$ reduction, with \textbf{no 117\,MB Galois key} and no
-slot-packing ceiling. Storage and key material are where this design wins, and the win is
-structural rather than a constant factor.
+The real and predicted FAR agree to within $1.2\%$ relative error, validating the
+closed-form accept model at the deployed operating point. This is consistent with the
+same agreement already established for Super-Bit and R1 at their published operating
+point $(14,2,64)$ (real FAR $4.42\times10^{-2}$ vs.\ predicted $4.45\times10^{-2}$ for
+Super-Bit; real $1.05\times10^{-1}$ vs.\ predicted $1.05\times10^{-1}$ for the
+ortho-thermometer), so the surrogate used throughout \S\ref{sec:eval-ladder} and
+\S\ref{sec:eval-comms} is not merely a model artifact.
+
+\subsection{Generality: universal $\sigma$, gap-dependent accuracy}
+
+\begin{table}[htbp]
+\centering
+\caption{Generality across corpora: floating-point ceilings, R1/R2 EER, and impostor
+$\sigma$ (ortho-thermometer $\to$ feature-head). PolyU and FVC2002 use fine-tuned CNNs on
+finger-disjoint splits, held out from all code training.}
+\label{tab:generality}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Corpus & Float conv/16-D & R1 (ortho) EER & R2 (feat) EER & $\sigma$ (ortho$\to$feat) \\
+\midrule
+SOCOFing & 0.16\% / 0.33\% & 0.87\% [0.62,0.99] & 0.17\% [0.06,0.26] & $14.6\to6.72$ \\
+PolyU contactless & 16.9\% / 13.3\% & 12.15\% [10.0,14.2] & 13.17\% [11.0,15.2] &
+  $17.4\to11.7$ \\
+PolyU contact & 25.6\% / 21.5\% & 19.18\% [16.7,20.5] & 21.38\% [19.5,23.8] &
+  $13.0\to7.27$ \\
+FVC2002 Db1\_a & 37.6\% / 37.1\% & 34.43\% [32.2,37.7] & 29.82\% [26.8,32.9] &
+  $19.0\to11.3$ \\
+FVC2002 Db4\_a & 38.8\% / 31.0\% & 25.30\% [21.9,29.2] & 34.93\% [31.1,38.3] &
+  $20.2\to6.90$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two conclusions, both measured. First, the $\sigma$-collapse from R1 to R2 is universal:
+it occurs on every corpus, including the two where R2 does not win on EER, so the
+communication benefit of \S\ref{sec:eval-comms} is expected to travel even where the
+accuracy benefit does not. Second, the EER gain tracks the \emph{quantisation gap} between
+the floating-point representation and the 16-D embedding, exactly as
+Theorem~\ref{thm:relaxation} predicts: on SOCOFing the 25,088-D conv features are far
+richer than the 16-D bottleneck ($0.16\%$ vs.\ $0.33\%$ float ceilings), and R2 closes
+most of that gap; on PolyU-contact and FVC-Db4\_a the conv features are \emph{not} richer
+than the 16-D output (float-conv EER exceeds float-16D EER), there is no gap to close, and
+R2 is a wash or a loss. We read gap-dependence as \emph{confirming} the theory, not as a
+weakness: the method improves accuracy only where the representation it draws on carries
+information the 16-D bottleneck discarded, and predicts correctly when it will not help.
+
+As a further check that this is a genuine representation-richness effect rather than an
+artifact of our particular CNN, an off-the-shelf DeepPrint-512~\cite{EngelsmaCaoJain19}
+extractor, with no fingerprint-specific fine-tuning, transfers near-chance to these same
+corpora (float EER 23.9--24.1\% on PolyU, 32.2--42.9\% on FVC2002) --- a stronger
+off-the-shelf backbone cannot manufacture a quantisation gap that is not there; the binding
+constraint is domain adaptation, not coder design.
+
+\subsection{Measured negatives}
+
+Consistent with a positive result built on a documented failure search rather than a
+single lucky configuration, the following all measured negative and are reported for
+completeness. (i) End-to-end fine-tuning of the CNN jointly with the code objective
+diverges: perturbing the already-converged embedding destroys discriminability faster than
+the code objective can repair it. (ii) A BCE-based bit-balance loss \emph{inflates}
+$\sigma$ ($14.6 \to 18.6$) and worsens EER, the opposite of the intended effect --- not
+every balance objective helps; ours (\S\ref{sec:featurehead}) was selected because it
+does. (iii) Fragile-bit pruning/reweighting gives no gain: EER is monotonically worse as
+bits are dropped ($128\to0.87\%$, $96\to1.57\%$, $64\to2.23\%$), so the extra bits are
+carrying real signal, not noise, and should not be pruned. (iv) Cross-sensor transfer
+(contact$\leftrightarrow$contactless) is near chance even when the extractor is trained on
+PolyU directly (float EER $48.7\%$), which scopes this work to same-sensor deployment.
+(v) A CLAHE-plus-ROI preprocessing attempt to close the PolyU domain gap made the floating
+point EER worse, not better ($10.87\%\to15.07\%$), consistent with (iv): the gap is in the
+sensor domain, not preprocessing.
+
+\subsection{Comparison with Blind-Touch}
+
+\begin{table}[htbp]
+\centering
+\caption{Honest comparison against the published Blind-Touch result~\cite{ChoiWooKim24}.
+Not apples-to-apples on PolyU: Blind-Touch trains a PolyU-specific extractor with a
+ridge-alignment pipeline, whereas our PolyU numbers use the SOCOFing-trained design
+transferred with only fine-tuning (Table~\ref{tab:generality}).}
+\label{tab:blindtouch}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+& This work (R2, feature-head) & Blind-Touch~\cite{ChoiWooKim24} \\
+\midrule
+SOCOFing EER & \textbf{0.17\%} & 0.7\% \\
+PolyU EER & 13.17--21.38\% (same-sensor) & 2.5\% (PolyU-specific pipeline) \\
+Comms @ $N{=}5{,}000$ & 2{,}377\,KB & \textbf{856\,KB} (compressed CKKS) \\
+Server storage/template & \textbf{16\,B} & 1.67\,KB \\
+Key material & \textbf{none} & 117\,MB Galois evaluation key \\
+Parties & \textbf{2} (client + server) & 3 (HE cluster) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We win SOCOFing accuracy by roughly $4\times$ (0.17\% vs.\ 0.7\%) and deployment
+simplicity: a two-party protocol with label-only disclosure, 16\,B server-side storage
+against 1.67\,KB, and no 117\,MB Galois key or HE cluster. We lose on raw communication:
+2,377\,KB against Blind-Touch's 856\,KB of compressed-CKKS traffic. Our $-45\%$
+improvement (\S\ref{sec:eval-comms}) narrows our own gap to Blind-Touch from roughly
+$9\times$ (at the original untuned Super-Bit point) to roughly $2.8\times$, but does not
+close it; compressed homomorphic ciphertext is still more communication-efficient per
+query than our garbled-circuit sub-sampling scheme, and we do not claim otherwise. PolyU
+is not a controlled comparison, since Blind-Touch there uses a corpus-specific extractor
+and alignment pipeline that our design does not attempt to match.

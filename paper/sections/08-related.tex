@@ -12,45 +12,93 @@ material; ``template'' is server-side storage per enrolled user.}
 System & Mechanism & Key & Template & Reported cost \\
 \midrule
 Blind-Touch~\cite{ChoiWooKim24} & CKKS & 117\,MB & 1.67\,KB & 856\,KB/query, 650\,ms \\
-Blind-Match~\cite{BlindMatch24} & CKKS, batched & large & --- & sub-second at $10^{4}$ \\
-Uzun et al.~\cite{UzunEtAl21} & fuzzy PSI & --- & --- & 12.1\,MB @ $10^{4}$ \\
-Bui--Cong~\cite{BuiCong25} & FLPSI & PRF key & $d/8$\,B & 153\,MB @ $10^{5}$ \\
-Chakraborti et al.~\cite{ChakrabortiEtAl23} & fuzzy PSI & --- & --- & distance-aware \\
-van Baarsen--Pu~\cite{vanBaarsenPu25} & structured fuzzy PSI & --- & --- & low-dim.\ metrics \\
+Blind-Match~\cite{BlindMatch24} & CKKS, batched 1:N & large & --- & sub-second at $10^{4}$ \\
+Uzun et al.~\cite{UzunEtAl21} & fuzzy PSI (functionality) & --- & --- & 12.1\,MB @ $10^{4}$ \\
+Bui--Cong~\cite{BuiCong25} & FLPSI (backend) & PRF key & $d/8$\,B & 153\,MB @ $10^{5}$ \\
+Chakraborti et al.~\cite{ChakrabortiEtAl23} & distance-aware PSI & --- & --- & low-dim.\ metrics \\
+van Baarsen--Pu~\cite{vanBaarsenPu24} & fuzzy PSI, large hyperballs & --- & --- & low-dim.\ metrics \\
 \midrule
-\textbf{This work} & CNN + LSH + FLPSI & PRF key & \textbf{16\,B} & 7.77\,MB @ $5\times10^{3}$ \\
+\textbf{This work} & CNN + co-designed code + FLPSI & PRF key & \textbf{16\,B} &
+  2.38\,MB/query @ $N{=}5000$ ($-45\%$ vs.\ our baseline) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Homomorphic biometric matching.} Blind-Touch~\cite{ChoiWooKim24} is our baseline and
-the source of the extractor architecture; Blind-Match~\cite{BlindMatch24} improves throughput with
-better batching. Both keep templates encrypted end-to-end --- a stronger at-rest guarantee than we
-provide (\S\ref{sec:atrest}) --- and both pay large key material and a packing-driven layout.
-Earlier work~\cite{KimOhKim20,YangEtAl20} established the Siamese-under-HE pattern.
+\paragraph{HE-based private biometrics.} Blind-Touch~\cite{ChoiWooKim24} is our baseline and the
+source of the extractor architecture: a CKKS matcher over encrypted float embeddings, run on a
+3-server cluster, at 117\,MB key material and 856\,KB per query. Earlier work established the
+Siamese-under-HE pattern~\cite{KimOhKim20,YangEtAl20}. Blind-Match~\cite{BlindMatch24} is a
+\emph{dangerous neighbour}: it attains strong $1{:}N$ accuracy under CKKS with batched cosine
+matching, reporting 99.55\% rank-1 on PolyU. Blind-Match attains this while keeping the HE trust
+and cost model --- large key material, encrypted-inference servers, and a similarity-score
+disclosure. We differ on three axes: (i) a lighter two-party protocol with no homomorphic layer;
+(ii) a label-only disclosure model, in which the client learns an identity on a match and nothing
+on a miss; and (iii) a \emph{matcher-agnostic design objective} --- our contribution is not a
+better HE matcher but a code co-designed with the matcher's own communication functional,
+orthogonal to which matcher is used. A further anti-example sharpens the same point: DeepPrint's
+200-byte fixed-length representation~\cite{EngelsmaCaoJain19} is exactly the kind of compact float
+template whose $1{:}N$ matching under HE motivates leaving HE in the first place --- the per-query
+communication and key material of encrypting even a compact template at scale are precisely the
+costs Blind-Touch and Blind-Match pay.
 
-\paragraph{Fuzzy PSI.} Uzun et al.~\cite{UzunEtAl21} gave the first practical fuzzy PSI for
-biometric identification. Bui and Cong~\cite{BuiCong25} introduced the fuzzy-\emph{labelled}
-variant we build on, achieving linear communication with no packing ceiling; the construction,
-its correctness argument and its security proof are theirs.
-Others~\cite{ChakrabortiEtAl23,GaoEtAl24,vanBaarsenPu25,GarimellaEtAl23} extend fuzzy and
-structure-aware PSI to other metrics and adversary models. What none of this line addresses is
-where the binary strings come from --- the assumption throughout is that inputs are already
-bit-strings under Hamming distance. Our contribution is to supply that input from a learned
-extractor and then to measure what the assumption costs when the strings are not uniform
-(\S\ref{sec:params}).
+\paragraph{Fuzzy and threshold PSI (the star primitive's lineage).} Uzun et
+al.~\cite{UzunEtAl21} is the correct primary citation for the FLPSI functionality and its
+sub-sample/threshold accept model --- fuzzy \emph{labelled} PSI for private real-time biometric
+search. Bui and Cong~\cite{BuiCong25} give the efficient vector ring-OLE backend we use for the
+concrete crypto realisation, built on the VOLE-PSI
+line~\cite{RindalSchoppmann21,RaghuramanRindal22} and silent OT/PCG~\cite{BoyleEtAl19}; we use it
+as the backend, not as the source of the functionality. A separate line of work achieves exact
+fuzzy matching in low-dimensional metric spaces --- van Baarsen and
+Pu~\cite{vanBaarsenPu24}, Gao et al.~\cite{GaoEtAl24}, Chakraborti et
+al.~\cite{ChakrabortiEtAl23}, and Garimella et al.~\cite{GarimellaEtAl23}. These protocols achieve
+exact fuzzy matching in low-dimensional $L_p$ balls, but their cost is exponential in the
+dimension $d$; for $d=128$ Hamming they are impractical, which is exactly why the
+sub-sample/threshold route of Uzun and Bui--Cong --- and therefore the impostor-Hamming design
+objective it induces --- is the right target for high-dimensional biometric codes. None of this
+line addresses where the bit-strings come from; all assume the input is already a code under
+Hamming distance. Our contribution supplies that input from a learned extractor and, more
+importantly, identifies the matcher's own communication functional as the objective the code
+should be trained to.
 
-\paragraph{Template protection.} Cancelable biometrics~\cite{RathaEtAl01},
-BioHashing~\cite{TeohEtAl04}, index-of-max hashing~\cite{JinEtAl18}, fuzzy
-vaults~\cite{JuelsSudan02} and fuzzy extractors~\cite{DodisEtAl04,JuelsWattenberg99} all target
-exactly the ISO/IEC 24745 properties our stored code fails. They typically pay accuracy for
-those properties, and known attacks~\cite{GhammamEtAl20,DongJinTeoh19} limit some constructions.
-We do not adopt them here, but \S\ref{sec:atrest} shows a per-enrolment XOR mask recovers
-unlinkability and renewability at zero accuracy cost, because XOR preserves Hamming distance
-exactly --- and is honest that this does not deliver irreversibility.
+\paragraph{Learning-to-hash and deep supervised hashing (the actuator's lineage).} SimHash~\cite{Charikar02},
+Super-Bit LSH~\cite{JiEtAl12} and ITQ~\cite{GongLazebnik11} are the classical bridges from real
+vectors to binary codes. A substantial line of deep supervised hashing pursues balanced,
+low-quantisation-error codes for retrieval accuracy: GreedyHash~\cite{SuEtAl18},
+HashNet~\cite{CaoEtAl17}, central similarity quantisation~\cite{YuanEtAl20}, one-loss
+quantisation~\cite{DoanYangLi22}, bit-entropy maximisation~\cite{LiVanGemert21}, and the maximal
+coding-rate-reduction (MCR\textsuperscript{2}) principle~\cite{YuEtAl20}, which supply the
+balance and decorrelation objectives our feature head borrows. We claim no new hashing mechanism.
+What is new is the \emph{reason} to want such a code here: for a private matcher, the same
+balance-and-decorrelation objective that this literature developed for retrieval accuracy is,
+under FLPSI's accept rule, the protocol's own \emph{communication} functional --- so an
+off-the-shelf hashing loss, pointed at the impostor-Hamming distribution instead of at retrieval
+recall, becomes a cryptographic-cost optimiser. No prior hashing work optimises the code for a
+private matcher's communication.
 
-\paragraph{Deep hashing.} SimHash~\cite{Charikar02}, Super-Bit~\cite{JiEtAl12} and
-ITQ~\cite{GongLazebnik11} are the standard bridges from real vectors to binary codes;
-DeepPrint~\cite{EngelsmaCaoJain19} learns fixed-length fingerprint representations directly.
-Our bridge is deliberately training-free and public so that it composes with a protocol whose
-security must not depend on it.
+\paragraph{Biometric template protection and ISO/IEC 24745.} Fuzzy commitment~\cite{JuelsWattenberg99},
+fuzzy vaults~\cite{JuelsSudan02}, fuzzy extractors~\cite{DodisEtAl04} and their reusable
+variant~\cite{CanettiEtAl16} form the key-from-noisy-data line; cancelable
+biometrics~\cite{RathaEtAl01}, BioHashing~\cite{TeohEtAl04} and index-of-max
+hashing~\cite{JinEtAl18,DongJinTeoh19}, the latter with a known cryptanalysis~\cite{GhammamEtAl20},
+form the cancelable-transform line. These schemes target exactly the ISO/IEC 24745 properties our
+stored code must satisfy; we adopt a per-enrolment XOR mask for unlinkability and renewability
+(\S\ref{sec:security}), which preserves Hamming distance exactly and so costs nothing in accuracy,
+and we are explicit that it does not deliver irreversibility on its own --- a construction from
+this line would need to be layered on. Gomez-Barrero and Galbally's survey of inverse
+biometrics~\cite{GomezBarreroGalbally20} is the reconstruction threat that motivates taking
+irreversibility seriously rather than treating it as a formality. Daugman's degrees-of-freedom
+analysis~\cite{Daugman03} is the foundation of our effective-bits argument: a biometric code
+carries a finite number of independent degrees of freedom, its impostor comparisons follow a
+binomial law, and the variance of that law is exactly what our design objective (\S\ref{sec:design})
+targets.
+
+\paragraph{Fingerprint representation.} DeepPrint~\cite{EngelsmaCaoJain19} gives the fixed-length
+neural representation that makes a binariser meaningful in the first place; Rohwedder et
+al.~\cite{Rohwedder23} provide a public reimplementation benchmarked across embedding sizes and
+sensor types, which we use as the backbone for a cross-corpus generality study; Pan et
+al.~\cite{PanEtAl24} give recent state-of-the-art context with a dense minutia descriptor. The
+cross-corpus study shows the extractor, not the code, is the bottleneck on harder corpora ---
+which sharpens rather than weakens our central claim, since the communication benefit of a
+co-designed code is code-side and, in our measurements, universal, while the accuracy benefit is
+tied to how much larger the float embedding's discriminative power is than any fixed-length code
+of it.
