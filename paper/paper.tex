@@ -1,10 +1,16 @@
 % =============================================================================
-%  NeuralPSI: composing a learned biometric feature extractor with fuzzy-labelled
-%  private set intersection --- and measuring what the composition costs.
+%  Distribution-Matched Codes for Fuzzy-PSI Fingerprint Authentication
 %
-%  Build:  tectonic -X compile paper.tex
-%  The long exploratory draft this replaces is kept at draft-long.tex as source
-%  material; it is not part of the submission.
+%  Build:  latexmk -pdf paper.tex   (or: tectonic -X compile paper.tex)
+%  SPACE 2026 submission: LLNCS, <=20 pages INCLUDING bibliography and appendix,
+%  double-blind -> author block stays anonymised for review.
+%
+%  Camera-ready author block (do NOT uncomment for the blind submission):
+%    \author{Prabhudutta Prusti\inst{1} \and Rineet Pandey\inst{1} \and
+%            Rohitkumar R. Upadhyay\inst{1} \and Amit Kumar Chauhan\inst{1} \and
+%            Ayan Chattopadhyay\inst{1}}
+%    \authorrunning{P. Prusti et al.}
+%    \institute{<affiliation>}
 % =============================================================================
 \documentclass[runningheads]{llncs}
 
@@ -22,6 +28,23 @@
 \renewcommand{\bottomfraction}{0.8}
 \renewcommand{\textfraction}{0.07}
 \renewcommand{\floatpagefraction}{0.8}
+% tighten vertical whitespace around floats and displays (does NOT change margins
+% or the 10pt body font, so it stays within the LNCS layout).
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{7pt plus 2pt minus 2pt}
+\setlength{\intextsep}{7pt plus 2pt minus 2pt}
+\abovedisplayskip=5pt plus 2pt minus 2pt
+\belowdisplayskip=5pt plus 2pt minus 2pt
+\abovedisplayshortskip=3pt plus 1pt
+\belowdisplayshortskip=3pt plus 1pt
+% tighten inter-item spacing in the bibliography list (spacing only, not margins)
+\makeatletter
+\renewcommand\@openbib@code{\itemsep=-1pt \parsep=\z@}
+\makeatother
+
+% Theorem-like environments (lemma, proposition, theorem, corollary) and proof
+% are provided by the llncs class; we use them directly and reference every
+% result by \label/\ref so the numbering is always consistent.
 
 \newcommand{\xt}{\tilde{\mathbf{x}}}
 \newcommand{\yt}{\tilde{\mathbf{y}}}
@@ -29,8 +52,8 @@
 
 \begin{document}
 
-\title{One Code, Two Objectives: Co-Designing Binary\\
-       Fingerprint Templates with the Private Matcher}
+\title{Distribution-Matched Codes for Fuzzy-PSI\\
+       Fingerprint Authentication}
 
 \author{Anonymous Author}
 \authorrunning{Anonymous}
@@ -39,33 +62,32 @@
 \maketitle
 
 \begin{abstract}
-Privacy-preserving fingerprint authentication is usually built on homomorphic encryption
-(HE): the server matches over ciphertext, at the cost of a multi-server cluster, large
-evaluation keys, and a score-revealing interface. We instead realise it as a lightweight
-\emph{two-party} protocol: a CNN maps the fingerprint, in plaintext on the client, to a
-128-bit code, and Fuzzy-Labelled Private Set Intersection (FLPSI) returns \emph{only} the
-matched record's label. The accuracy of such a pipeline comes from the feature extractor,
-not the cryptography, so the binariser -- the map from a continuous embedding to the binary
-code the matcher consumes -- is the design's true lever. Our central result is that this
-lever is shared: the FLPSI acceptance rule
-$\Pr[\mathrm{Binom}(T,q(H)) \ge t]$, with $q(H)=\binom{d-H}{w}/\binom{d}{w}$, makes both the
-error rate \emph{and} the online communication (which scales with the subsample count $T$)
-functionals of the code's impostor-Hamming distribution. We prove that, among codes of mean
-$d/2$, the communication- and error-optimal one is the balanced, bit-decorrelated code whose
-impostor Hamming distribution approaches the maximum-entropy $\mathrm{Binom}(d,\tfrac12)$, and
+Privacy-preserving fingerprint authentication is usually built on homomorphic encryption:
+the server matches over ciphertext, paying for it with a multi-server cluster, large
+evaluation keys, and a score-revealing interface. We take a different route and build it as a
+two-party protocol. A CNN maps the fingerprint to a 128-bit code in plaintext on the client,
+and Fuzzy-Labelled Private Set Intersection (FLPSI) returns only the matched record's label.
+Accuracy in such a pipeline comes from the feature extractor, not the cryptography, which
+makes the \emph{binariser} (the map from a continuous embedding to the binary code the matcher
+consumes) the real design lever. Our central result is that this lever is shared. The FLPSI
+acceptance rule $\Pr[\mathrm{Binom}(T,q(H)) \ge t]$, with $q(H)=\binom{d-H}{w}/\binom{d}{w}$,
+makes the error rate and the online communication (which scales with the subsample count $T$)
+two readings of the same statistic: the code's impostor-Hamming distribution. We prove that,
+among codes of mean $d/2$, the code that minimises both is the balanced, bit-decorrelated one
+whose impostor distribution approaches the maximum-entropy $\mathrm{Binom}(d,\tfrac12)$, and
 that a quantization-aware learned binariser is a differentiable relaxation of that optimum.
 We instantiate the objective with two binarisers on one 128-bit FLPSI backend. A training-free
-metric-aware code fixes the geometry an LSH baseline mis-assumed, cutting equal-error rate (EER)
-on held-out SOCOFing from $1.89\%$ to $0.87\%$; a quantization-aware feature-head then reaches
+metric-aware code fixes a geometry an LSH baseline mis-assumed, cutting equal-error rate (EER)
+on held-out SOCOFing from $1.89\%$ to $0.87\%$; a quantization-aware feature head then reaches
 EER $\mathbf{0.17\%}$ (95\% CI $[0.06,0.26]$), collapses the impostor Hamming standard deviation
-from $20.1$ to $6.72$ (ideal $5.66$), raises code utilisation from ${\sim}10$ to ${\sim}90$ of
-$128$ bits, and reaches a feasible operating point at which a loose baseline code is infeasible.
-We validate the operating point end-to-end through the real cryptographic binary
-(real TAR $97.0\%$, FAR $0.80\%$, matching the closed-form model). Generality tests on PolyU and
-FVC2002 confirm the predicted pattern: the impostor-distribution (hence communication) gain is
-universal, while the large accuracy gain is conditioned on a corpus where the extractor leaves a
-quantization gap. We give a semi-honest security analysis with simulators for both corruptions
-and assess the design against ISO/IEC 24745.
+from $20.1$ to $6.72$ (ideal $5.66$), and raises code utilisation from ${\sim}10$ to ${\sim}90$
+of $128$ bits. We validate the operating point end to end through the real cryptographic binary
+(TAR $97.0\%$, FAR $0.80\%$, matching the closed-form model) and cut online communication by
+$45\%$ ($4317 \to 2377$\,KB at $N{=}5000$) on the same backend. Generality tests on PolyU and
+FVC2002 confirm the predicted split: the impostor-distribution gain, hence the communication
+gain, is universal, while the large accuracy gain is conditioned on a corpus where the extractor
+leaves a quantization gap. We give a semi-honest security analysis with simulators for both
+corruptions and assess the design against ISO/IEC 24745.
 
 \keywords{Private set intersection \and Biometric template protection \and
 Learning to hash \and Secure two-party computation \and ISO/IEC 24745.}
@@ -84,8 +106,5 @@ Learning to hash \and Secure two-party computation \and ISO/IEC 24745.}
 
 \bibliographystyle{splncs04}
 \bibliography{references}
-
-\appendix
-\input{sections/appendix-hybrids}
 
 \end{document}

@@ -6,191 +6,85 @@
 \section{Parameter Selection: From Diagnosis to a Feasible Operating Point}
 \label{sec:params}
 
-The FLPSI layer is parameterised by the sub-sample width $w$, the number of sub-samples $T$, and
-the acceptance threshold $t$ on the number of colliding sub-samples (earlier sections write
-$\theta$ for the identical quantity; we use $t$ here to match the hypothesis-testing language of
-\S\ref{sec:design}). This section shows that $(w,t,T)$ cannot be chosen from an assumed impostor
-model --- doing so at the naïve Super-Bit code understates the false-accept rate by three orders
-of magnitude and hits a floor no threshold can cross --- but that this is a fact about \emph{that
-code}, not about the protocol. Once the code is co-designed with the accept rule, exactly the same
-arithmetic yields a feasible, verified operating point.
-
-\subsection{The accept model}
-\label{sec:accept-model}
-
-A sub-sample selects $w$ of the $d = 128$ positions uniformly at random and collides when the two
-codes agree on all of them. Writing $H = \|\xt \oplus \yt_i\|_1$ for the Hamming distance between
-probe and enrolled code, the per-sub-sample collision probability and the acceptance probability
-over $T$ independent sub-samples are
-\begin{equation}
-\label{eq:accept}
-q(H) \;=\; \frac{\binom{d-H}{w}}{\binom{d}{w}} \;\approx\; \Bigl(1-\tfrac{H}{d}\Bigr)^{w},
-\qquad
-\Pr[\text{accept} \mid H] \;=\; \Pr\bigl[\mathrm{Binomial}(T, q(H)) \ge t\bigr].
-\end{equation}
-Acceptance depends on a pair \emph{only through $H$}, so the false-accept and false-reject rates
-are exact functionals of the two Hamming histograms $P_{\mathrm{imp}}, P_{\mathrm{gen}}$,
-\begin{equation}
-\label{eq:rates}
-\mathrm{FAR} = \sum_{H} P_{\mathrm{imp}}(H)\,\Pr[\text{accept}\mid H],
-\qquad
-\mathrm{FRR} = 1 - \sum_{H} P_{\mathrm{gen}}(H)\,\Pr[\text{accept}\mid H].
-\end{equation}
-As shown in \S\ref{sec:design}, thresholding the sub-sample count $K$ is not an arbitrary choice:
-it is the Neyman--Pearson-optimal test for the sufficient statistic FLPSI already computes, given
-the two aggregate per-trial accept masses $q_g = \mathbb{E}_{P_{\mathrm{gen}}}[q(H)]$ and
-$q_i = \mathbb{E}_{P_{\mathrm{imp}}}[q(H)]$. That result licenses treating parameter selection as a
-one-dimensional problem --- choosing $T$ and $t$ once $q_g, q_i$ are known --- and the Gaussian
-form derived there,
+The FLPSI layer is parameterised by $(w,t,T)$. This section shows these cannot be chosen from an
+assumed impostor model: at the naive Super-Bit code that understates the false-accept rate by three
+orders of magnitude and hits a floor no threshold can cross, a fact about \emph{that code}, not the
+protocol, since once the code is co-designed with the accept rule the same arithmetic yields a feasible,
+verified operating point. The accept model and its FAR/FRR functionals are those of \S\ref{sec:design};
+by Proposition~\ref{prop:np} thresholding the count is Neyman--Pearson optimal, which makes parameter
+selection one-dimensional, and the Gaussian rule of Proposition~\ref{prop:tmin},
 \begin{equation}
 \label{eq:tmin}
 T_{\min} \;\approx\; \frac{\bigl[\,z_\alpha\sqrt{q_i(1-q_i)} + z_\beta\sqrt{q_g(1-q_g)}\,\bigr]^2}
                             {(q_g - q_i)^2},
 \end{equation}
-is the design rule used throughout this section: it says $T$ is governed entirely by the gap
-$q_g - q_i$, which in turn is governed entirely by the impostor and genuine Hamming laws
-(\S\ref{sec:design}, Lemma~2.1 / Prop.~3.2). Every number below plugs the \emph{measured} laws
-into~\eqref{eq:accept}--\eqref{eq:tmin}; nothing is assumed.
+is used throughout: $T$ is governed by the gap $q_g-q_i$, itself governed by the Hamming laws. Every
+number below plugs the \emph{measured} laws into these expressions.
 
 \subsection{Diagnosis: what an assumed impostor law costs}
 \label{sec:diagnosis}
 
-The naïve design fixes $(w,t) = (14,2)$ under the assumption that impostor codes are uniform,
-$H \sim \mathrm{Binomial}(128, \tfrac12)$, i.e.\ mean $64$ and $\sigma = 5.66$. The Super-Bit
-bridge (\S\ref{sec:design}) does center the mean correctly --- measured impostor mean $64.05$ ---
-but its measured standard deviation is $\sigma = 20.11$, $3.6\times$ the assumed value, at
-\emph{the same mean}. No first-moment check on this code would ever catch the problem.
+The naive design fixes $(w,t)=(14,2)$ under the assumption that impostor codes are uniform,
+$H \sim \mathrm{Binomial}(128,\tfrac12)$, i.e.\ mean $64$ and $\sigma=5.66$. The Super-Bit bridge does
+centre the mean correctly (measured impostor mean $64.05$), but its measured standard deviation is
+$\sigma=20.11$, $3.6\times$ the assumed value at the same mean. No first-moment check would catch it.
+This is the pathology Lemma~\ref{lem:jensen} predicts: $q(H)$ is convex, so any mean-preserving spread
+of the impostor law strictly increases $q_i$, hence $T_{\min}$, hence communication. At $(w,t)=(14,2)$
+the assumed uniform law reproduces the design-time false-accept rate of $2.954\times10^{-5}$ exactly;
+against the \emph{measured} Super-Bit law the same expression gives $4.578\times10^{-2}$, a
+$1{,}550\times$ gap between the assumed and the actual per-record error, explained entirely by the
+excess variance.
 
-This is exactly the pathology Lemma~2.1 (\S\ref{sec:design}) predicts: $q(H)$ is convex, so any
-mean-preserving spread of the impostor law strictly increases $q_i$, and hence $T_{\min}$, and
-hence communication. Concretely, evaluating~\eqref{eq:rates} at $(w,t)=(14,2)$ against the assumed
-uniform law reproduces the design-time false-accept rate of $2.954\times10^{-5}$ exactly; against
-the \emph{measured} Super-Bit law the same expression gives $4.578\times10^{-2}$ --- a
-\textbf{1,550$\times$ gap} between the assumed and the actual per-record error, entirely explained
-by the excess variance.
-
-\paragraph{The collision floor.} Since $q(0)=1$, every sub-sample collides whenever $H=0$, so
-$\Pr[\text{accept}\mid H{=}0]=1$ for \emph{every} $(w,t,T)$: a code with any zero-Hamming impostor
-pairs has a floor on per-record FAR that no parameter choice can go below. On the Super-Bit code,
-$2$ of $1{,}438{,}800$ held-out probe$\times$gallery impostor pairs collide exactly, giving
-\begin{equation}
-\label{eq:floor}
-p_0 = 1.39\times10^{-6}, \qquad \text{exact Poisson 95\% CI } [1.68\times10^{-7},\, 5.02\times10^{-6}],
-\end{equation}
-which alone contributes $\mathrm{FAR}_{\text{query}} = 1-(1-p_0)^N \approx 6.9\times10^{-3}$ at
-$N=5{,}000$.\footnote{An earlier internal accounting reported $8$ collisions out of $2{,}877{,}600$
-pairs ($2.78\times10^{-6}$); that count additionally includes enrolment-versus-enrolment pairs,
-which are never issued as queries. We retire that figure and use the probe$\times$gallery
-definition~\eqref{eq:floor} throughout, as the operationally meaningful one.} By
-Corollary~6.1 (\S\ref{sec:design}), $p_0$ is a coding question, not a protocol question: it is
-governed by how many pairs of identities the code's \emph{effective} dimension $m_{\mathrm{eff}}$
-can keep apart, not by the nominal length $d$. This is why raising $d$ does not help on its own ---
-the dimension sweep shows Super-Bit's $\sigma$ barely moves ($20.1 \to 18.1$) as $D:16\to64$ ---
-and it is the reason this section does not end with a retuning sweep, but with a different code.
-
-\textbf{We treat both numbers above as a diagnosis, not a verdict.} They say precisely what a code
-must fix --- shrink the impostor variance toward the uniform floor $d/4$ --- and \S\ref{sec:fix}
-shows a code that does.
+\paragraph{The collision floor.} Since $q(0)=1$, a code with any zero-Hamming impostor pairs has a
+per-record FAR floor no parameter choice can beat. Super-Bit's $2/1{,}438{,}800$ held-out
+probe$\times$gallery collisions give $p_0 = 1.39\times10^{-6}$ (exact Poisson 95\% CI
+$[1.68\times10^{-7}, 5.02\times10^{-6}]$), which alone contributes
+$\mathrm{FAR}_{\text{query}}\approx6.9\times10^{-3}$ at $N=5{,}000$. By Corollary~\ref{cor:floor} this
+is a coding question governed by the effective dimension $m_{\mathrm{eff}}$, not the nominal $d$, which
+is why Super-Bit's $\sigma$ barely moves ($20.1 \to 18.1$) as $D:16\to64$ and why this section ends not
+with a retuning sweep but with a different code: the fix is to shrink the impostor variance toward the
+uniform floor $d/4$, and \S\ref{sec:fix} shows a code that does.
 
 \subsection{Effective bits track the impostor variance}
-\label{sec:effbits}
+\label{sec:effbits-params}
 
-The Daugman binomial degrees-of-freedom estimator translates a measured impostor
-$\sigma$ into an effective code length: at balance ($p=\tfrac12$), $m_{\mathrm{eff}} =
-d^2/(4\sigma^2)$~\cite{Daugman03}, which recovers $m_{\mathrm{eff}} = d$ exactly for the ideal
-uniform code ($\sigma=\sqrt{d}/2$). Table~\ref{tab:effbits} applies it to the three codes measured
-in this paper.
-
-\begin{table}[htbp]
-\centering
-\caption{Impostor standard deviation and Daugman effective bits, $d=128$. The uniform-ideal
-reference is $\sigma=5.66$, $m_{\mathrm{eff}}=128$.}
-\label{tab:effbits}
-\small
-\begin{tabular}{@{}lrrl@{}}
-\toprule
-code & impostor $\sigma$ & $m_{\mathrm{eff}} = d^2/(4\sigma^2)$ & agreement with an independent estimator \\
-\midrule
-Super-Bit (naïve)      & 20.11 & $\approx 10$   & participation ratio $9.84$ (measured) \\
-R1: metric-aware bridge & 14.60 & $\approx 18$   & participation ratio $13.6$ (measured) \\
-R2: feature-head code   & 6.72  & 90.7 & participation ratio $84.6$ (measured) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
+The Daugman estimator $m_{\mathrm{eff}} = d^2/(4\sigma^2)$ at balance~\cite{Daugman03}
+(Eq.~\ref{eq:meff}) turns a measured impostor $\sigma$ into an effective code length, recovering
+$m_{\mathrm{eff}}=d$ for the ideal uniform code ($\sigma=5.66$, $m_{\mathrm{eff}}=128$). Across the
+three codes it rises with $\sigma$: Super-Bit $\sigma=20.11 \Rightarrow m_{\mathrm{eff}}\approx10$
+(participation ratio $9.84$), R1 $\sigma=14.60 \Rightarrow \approx18$ (participation $13.6$), and R2
+$\sigma=6.72 \Rightarrow 90.7$ (participation $84.6$), the two estimators agreeing throughout.
 Super-Bit's $m_{\mathrm{eff}}\approx10$ is not a defect of the bridge but a consequence of coding a
-16-dimensional embedding into $128$ correlated bits; the bridge is faithful to the embedding's
-angular structure, and that structure is what has low effective dimension. A distribution-free
-alternative to the Daugman estimate is the coding-rate functional of maximal coding-rate reduction
-(MCR$^2$)~\cite{YuEtAl20}, $R(Z,\varepsilon) = \tfrac12\log\det\bigl(I + \tfrac{p}{n\varepsilon^2}
-ZZ^\top\bigr)$, which counts effectively independent directions without assuming a binomial fit;
-quantifying $R(Z,\varepsilon)$ and the rate reduction $\Delta R$ for the three codes on the
-held-out embeddings directly is left to future work.
+16-dimensional embedding into $128$ correlated bits: the bridge is faithful to the embedding's angular
+structure, and that structure is what has low effective dimension.
 
 \subsection{The fix: co-designing the code raises the effective bits and closes the gap}
 \label{sec:fix}
 
-Corollary~4.2 and Theorem~4.3 (\S\ref{sec:design}) turn \S\ref{sec:diagnosis}'s diagnosis into a
-training objective: balance every bit ($\mathbb{E}[D_i]=\tfrac12$) and decorrelate bit pairs
-($\mathrm{Cov}(D_i,D_j)\to0$), which is exactly minimizing the impostor variance the accept model
-is sensitive to. Applied to the same 128-bit FLPSI backend, this yields two successive codes whose
-impostor $\sigma$ moves toward the uniform ideal of $5.66$ and whose measured error moves with it:
+Corollary~\ref{cor:target} and Theorem~\ref{thm:relaxation} turn the diagnosis into a training
+objective (balance and decorrelate the bits, i.e.\ minimise the impostor variance), which on the same
+backend gives two successive codes whose impostor $\sigma$ moves toward the ideal $5.66$
+($20.11 \to 14.60 \to 6.72$) and whose EER moves with it ($1.89\% \to 0.87\% \to 0.17\%$; full ladder
+with CIs in Table~\ref{tab:acc}), both driving the collision floor to zero, so the diagnostic that
+indicted Super-Bit now certifies the fix.
 
-\begin{table}[htbp]
-\centering
-\caption{Impostor $\sigma$, EER, and zero-Hamming collisions across the diagnosis-to-fix ladder
-(SOCOFing, Easy probes, 1,200 held-out identities, identity-bootstrap 95\% CI).}
-\label{tab:ladder}
-\small
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-code & impostor $\sigma$ & EER (95\% CI) & $H{=}0$ collisions \\
-\midrule
-Super-Bit (naïve)       & 20.11 & 1.89\% [1.57, 2.22] & 2 / 1{,}438{,}800 \\
-R1: metric-aware bridge & 14.60 & 0.87\% [0.62, 0.99] & 0 \\
-R2: feature-head code   & 6.72  & 0.17\% [0.06, 0.26] & 0 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Both co-designed codes drive the collision floor of \S\ref{sec:diagnosis} to zero on the held-out
-set --- the same diagnostic that indicted Super-Bit now certifies the fix.
-
-\paragraph{A feasible operating point.} Plugging the feature-head code's measured $q_g, q_i$ into
-the $T_{\min}$ rule~\eqref{eq:tmin} and rounding to the nearest integer, feasible parameters at a
-target TAR $\geq 95\%$ and per-record FAR $\leq 10^{-2}$ are $(w,t,T) = (6,3,18)$ --- an order of
-magnitude fewer sub-samples than Super-Bit's published $T=64$, because the tighter impostor law
-raises $q_g - q_i$ and shrinks the numerator of~\eqref{eq:tmin} at once. Equation~\eqref{eq:accept}
-predicts a per-record FAR of $8.12\times10^{-3}$ at this point; running the \emph{real}
-\texttt{flash-psi} binary (masked-OPRF + garbled circuit + VOLE + Shamir sharing, not a
-closed-form simulation) at $(6,3,18)$ gives real TAR $97.0\%$, real FAR $0.80\%$
-($8.02\times10^{-3}$) against the $8.12\times10^{-3}$ prediction, $\sim\!84$\,ms/query.
-This finite-$T$ agreement between
-the asymptotic design rule and the deployed binary is the same pattern observed at Super-Bit's own
-published point (\S\ref{sec:design}, finite-$T$ caveat), where real and predicted FAR matched to
-the digit; here it certifies that the design rule transfers to the co-designed code, not just the
-naïve one.
+\paragraph{A feasible operating point.} Plugging the feature-head's measured $q_g, q_i$ into the
+$T_{\min}$ rule~\eqref{eq:tmin} and rounding, feasible parameters at target TAR $\geq 95\%$, per-record
+FAR $\leq 10^{-2}$ are $(w,t,T)=(6,3,18)$, an order of magnitude fewer sub-samples than Super-Bit's
+$T=64$ because the tighter impostor law raises $q_g-q_i$. Against the closed-form prediction
+$8.12\times10^{-3}$, the real \texttt{flash-psi} binary at $(6,3,18)$ gives real TAR $97.0\%$, FAR
+$0.80\%$ ($8.02\times10^{-3}$), $\sim\!84$\,ms/query, certifying that the design rule transfers to the
+co-designed code, not only the naive one.
 
 \subsection{Communication follows the same variance that fixed accuracy}
 \label{sec:comms}
 
-Because online communication scales with $T$ (\S\ref{sec:design}, assumption A4), the same
-variance reduction that lowered EER lowers bytes. Against Super-Bit's original, uncalibrated
-$T=64$ point, online communication measured on the real binary is $7953$\,KB per query at
-$N=5{,}000$ --- and Super-Bit has no feasible \emph{matched} operating point at all, since no
-$(w,t,T)$ reaches per-record FAR $\leq 10^{-2}$ on its code, so no like-for-like comparison to it
-exists. Between the two codes that \emph{do} have a matched point (TAR $\geq 95\%$, per-record
-FAR $\leq 10^{-2}$, $N=5{,}000$), R1 metric-aware bridge at $(w,t,T)=(19,3,34)$ costs
-$4317$\,KB while R2 feature-head reaches the same target at $T=18$
-(i.e.\ $(w,t,T)=(6,3,18)$) for $2377$\,KB --- a $45\%$ reduction at the same target
-operating point. These two
-comparisons must never be conflated: the $7953\to2377$\,KB figure is against an untuned $T=64$
-baseline that has no matched point of its own, while the $-45\%$ figure is the like-for-like
-comparison between two calibrated codes on the same protocol. The latter is the paper's
-communication contribution; the former only shows how far an uncalibrated parameterisation is from
-either.
-
-\paragraph{Summary.} Table~\ref{tab:ladder} and the operating point $(6,3,18)$ are the same
-object: parameters are not chosen against an assumed law and then defended, they are read off the
-measured impostor Hamming distribution of whichever code is deployed, and a better code is a
-strictly better choice of $(w,t,T)$ for free.
+Because online communication scales with $T$ (A4), the variance reduction that lowered EER lowers
+bytes. Super-Bit has no feasible \emph{matched} operating point (no $(w,t,T)$ reaches per-record FAR
+$\leq10^{-2}$), and its uncalibrated $T=64$ point costs $7953$\,KB per query at $N=5{,}000$. Between the
+two codes that do have a matched point (TAR $\geq95\%$, per-record FAR $\leq10^{-2}$, $N=5{,}000$), R1 at
+$(19,3,34)$ costs $4317$\,KB while R2 reaches the same target at $(6,3,18)$ for $2377$\,KB, a $45\%$
+reduction. Only the like-for-like $-45\%$ between calibrated codes is the communication contribution;
+$7953\to2377$\,KB is against an untuned baseline with no matched point. Parameters are thus read off the
+measured impostor Hamming distribution of whichever code is deployed, and a better code is a strictly
+better choice of $(w,t,T)$ for free.

@@ -1,254 +1,103 @@
-% =============================================================================
-%  Section 4: system design and the coupling theorem.
-%
-%  Theorem-style environments are not declared in paper.tex; they are declared
-%  locally below so this fragment compiles standalone-safe. Flagged to the
-%  coordinator: move these \newtheorem lines into paper.tex's preamble so every
-%  section shares one counter family, and drop the local block here.
-% =============================================================================
-\makeatletter
-\@ifundefined{lemma}{%
-  \newtheorem{lemma}{Lemma}[section]
-  \newtheorem{proposition}[lemma]{Proposition}
-  \newtheorem{theorem}[lemma]{Theorem}
-  \newtheorem{corollary}[lemma]{Corollary}
-}{}
-\makeatother
-\providecommand{\todo}[1]{\textbf{[TODO: #1]}}
-
 \section{Design and the Coupling Theorem}
 \label{sec:design}
 
 \subsection{System design}
 \label{sec:design-overview}
 
-NeuralPSI is a two-party protocol between a client and a server. A Siamese CNN feature
-extractor runs entirely on the client, in plaintext, over the raw capture; a public,
-fixed binariser turns its embedding into a $d$-bit code $\xt \in \{0,1\}^d$ ($d = 128$);
-and the two parties run fuzzy-labelled private set intersection (FLPSI) --- random
-$w$-subset sub-sampling, a count-threshold accept rule, label-only output --- to decide
-whether $\xt$ matches an enrolled code $\yt_i$ and, if so, to reveal only the associated
-label $\ell_i$. The server never learns $\xt$, any sub-sample of it, or the Hamming
-distance to non-matching records; it learns a label or nothing. This functionality and
-its accept model are due to \cite{UzunEtAl21}; we build a private, label-revealing
-matcher on top of it and, in \S\ref{sec:security}, prove what a corrupt client and a
-corrupt server each learn. The threat model, the two corruption cases, and the
-credentialing step that turns a private lookup into an authentication are given in
-\S\ref{sec:threat} and \S\ref{sec:security}; this section is about what happens
-\emph{before} the protocol runs --- how the client's code is chosen --- and why that
-choice is not incidental to the protocol's accuracy or its communication cost, but
-governs both through a single scalar.
-
-The central design question is which binariser to use. \S\ref{sec:binarisers} gives two:
-a training-free, metric-aware ortho-thermometer code, and a quantisation-aware learned
-feature-head. Both are instances of the same target established below, and the
-remainder of this section proves why that target is the right one.
+NeuralPSI is a two-party protocol: a client-side plaintext Siamese CNN, a public fixed binariser to a
+$d$-bit code $\xt \in \{0,1\}^d$ ($d=128$), and FLPSI (random $w$-subset sub-sampling, count-threshold
+accept, label-only output) deciding whether $\xt$ matches an enrolled $\yt_i$ and revealing only
+$\ell_i$; the functionality and accept model are due to~\cite{UzunEtAl21}, and \S\ref{sec:security}
+proves what each corrupt party learns. This section is about what happens \emph{before} the protocol
+runs: how the code is chosen, and why that choice governs both accuracy and communication through a
+single scalar. \S\ref{sec:binarisers} gives two binarisers for the same target, derived next.
 
 \subsection{Notation and setup}
 \label{sec:coupling-setup}
 
-The server holds enrolled codes $\yt_1,\dots,\yt_N \in \{0,1\}^d$; the client holds a
-probe $\xt$. For a fixed pair write $H = H(\xt,\yt) = \lVert \xt \oplus \yt\rVert_1 \in
-\{0,\dots,d\}$ for their Hamming distance, and $D_i = \mathbf{1}[\xt_i \neq \yt_i]$ for
-the per-position difference indicator, so $H = \sum_{i=1}^d D_i$. FLPSI draws $T$
-independent uniformly random $w$-subsets $S_1,\dots,S_T \subseteq [d]$ and accepts iff at
-least $t$ of them collide, i.e.\ $\xt$ and $\yt$ agree on every position of $S_k$ for at
-least $t$ values of $k$.
-
-\paragraph{Per-trial match probability.} A single trial collides iff $\xt,\yt$ agree on
-all of a uniformly random $w$-subset:
-\begin{equation}
-\label{eq:qh}
-q(H) \;=\; \frac{\binom{d-H}{w}}{\binom{d}{w}} \;\approx\; \Bigl(1-\frac{H}{d}\Bigr)^{w}
-\end{equation}
-(hypergeometric exactly; the sampling-with-replacement approximation is tight for $w \ll
-d$). Writing $K$ for the number of colliding trials out of $T$, $K \mid H \sim
-\mathrm{Binomial}(T, q(H))$, so
-\begin{equation}
-\Pr[\text{accept}\mid H] \;=\; \Pr[K \ge t] \;=\; \sum_{k=t}^{T} \binom{T}{k} q(H)^k
-\bigl(1-q(H)\bigr)^{T-k}.
-\end{equation}
-Let $P_{\mathrm{gen}}$, $P_{\mathrm{imp}}$ denote the distribution of $H$ over genuine and
-impostor pairs respectively. The aggregate error rates are exact functionals of these two
-histograms:
-\begin{equation}
-\mathrm{FAR} = \sum_H P_{\mathrm{imp}}(H)\,\Pr[\text{accept}\mid H], \qquad
-\mathrm{FRR} = 1 - \sum_H P_{\mathrm{gen}}(H)\,\Pr[\text{accept}\mid H].
-\end{equation}
-We write $q_g = \mathbb{E}_{H \sim P_{\mathrm{gen}}}[q(H)]$ and $q_i =
-\mathbb{E}_{H\sim P_{\mathrm{imp}}}[q(H)]$ for the aggregated per-trial genuine and
-impostor accept masses.
-
-Four assumptions underlie everything below, and each is validated against measurement
-rather than merely posited.
-\begin{description}
-\item[(A1) Position exchangeability.] $\Pr[\text{accept}\mid H]$ depends on a pair only
-  through $H$, not on \emph{which} positions differ, because $S_k$ is a uniformly random
-  $w$-subset. This is exact by construction of the protocol.
-\item[(A2) Conditional hypergeometric accept.] Given $H$, a sub-sample collides with
-  probability $q(H)$ even though the underlying bits are dependent across positions.
-  Measured $\hat q(H)/q(H)$ has median $1.002$ over $H \in [5,40]$ at $w=14$.
-  Bit dependence is real but manifests in the
-  \emph{distribution of $H$}, not in $\Pr[\text{accept}\mid H]$ --- which is what isolates
-  the entire modelling problem to $P_{\mathrm{imp}}$ and $P_{\mathrm{gen}}$, and is why
-  the coupling below is exact rather than heuristic at the level of the accept rule.
-\item[(A3) Independence across trials.] The $T$ sub-samples are drawn independently, so
-  $K \mid H \sim \mathrm{Binomial}(T, q(H))$ exactly.
-\item[(A4) Communication model.] Online per-query communication scales linearly in $T$:
-  the masked OPRF and the vector ring-OLE label encoding are each repeated per mask.
-\end{description}
+For a probe/enrolled pair write $H = \lVert \xt \oplus \yt\rVert_1$ and $D_i = \mathbf{1}[\xt_i \neq
+\yt_i]$, so $H = \sum_{i=1}^d D_i$. A single trial collides with probability $q(H) =
+\binom{d-H}{w}/\binom{d}{w} \approx (1-H/d)^{w}$ (hypergeometric; the replacement approximation is tight
+for $w\ll d$), so $K \mid H \sim \mathrm{Binomial}(T, q(H))$ and $\Pr[\text{accept}\mid H] = \Pr[K\ge
+t]$. With $P_{\mathrm{gen}}, P_{\mathrm{imp}}$ the genuine and impostor laws of $H$, FAR and FRR are the
+exact functionals $\sum_H P_{\mathrm{imp}}(H)\Pr[\text{accept}\mid H]$ and $1-\sum_H
+P_{\mathrm{gen}}(H)\Pr[\text{accept}\mid H]$; write $q_g = \mathbb{E}_{P_{\mathrm{gen}}}[q(H)]$ and
+$q_i = \mathbb{E}_{P_{\mathrm{imp}}}[q(H)]$ for the aggregated per-trial accept masses. Four assumptions
+underlie what follows. (A1) Acceptance depends
+on a pair only through $H$, since $S_k$ is uniform (exact by construction). (A2) Given $H$, a
+sub-sample collides with probability $q(H)$ despite bit dependence: measured $\hat q(H)/q(H)$ has median
+$1.002$ over $H \in [5,40]$ at $w=14$, so dependence shows up in the distribution of $H$, not in
+$\Pr[\text{accept}\mid H]$, isolating the modelling problem to $P_{\mathrm{imp}},P_{\mathrm{gen}}$. (A3)
+The masks are independent, so $K \mid H \sim \mathrm{Binomial}(T, q(H))$. (A4) Online per-query
+communication scales linearly in $T$.
 
 \subsection{The coupling analysis}
 \label{sec:coupling}
 
-We now show that a single scalar functional of the code --- the variance of the impostor
-Hamming law --- governs simultaneously the achievable (FAR, FRR) operating point and the
-number of sub-sampling rounds $T$ needed to reach it, and hence, by (A4), the online
-communication cost. A code that minimizes this functional is therefore accuracy-optimal
-and communication-optimal at once; this is the paper's central mechanism.
+A single scalar functional of the code, the variance of the impostor Hamming law, governs the
+achievable (FAR, FRR) operating point and the number of sub-sampling rounds $T$ needed to reach it,
+and hence, by (A4), the online communication. A code that minimises this functional is accuracy- and
+communication-optimal at once. We state the results here; full proofs are in the extended version.
 
 \begin{lemma}[Cost is a functional of the impostor-Hamming law]
 \label{lem:jensen}
-Let $g(h) = (1-h/d)^w$ on $h \in [0,d]$, $w \ge 2$. Then $g$ is convex and strictly
-decreasing, and the effective per-trial impostor accept mass satisfies
-\begin{equation}
-\label{eq:jensen}
-q_i \;=\; \mathbb{E}_{H \sim P_{\mathrm{imp}}}[g(H)] \;\ge\; g(\mathbb{E}[H]) \;=\;
-\Bigl(1-\frac{\mathbb{E}[H]}{d}\Bigr)^{w}.
-\end{equation}
-Moreover the gap $q_i - g(\mathbb{E}[H])$ is monotone under mean-preserving spreads of
-$P_{\mathrm{imp}}$ (the convex order), and to second order equals
-$\tfrac12 g''(\mathbb{E}[H])\,\mathrm{Var}(H) + O(\text{third central moment})$. In
-particular, at fixed mean $\mathbb{E}[H] = d/2$, larger impostor variance implies larger
-$q_i$.
+Let $g(h) = (1-h/d)^w$ on $h \in [0,d]$, $w \ge 2$. Then $g$ is convex and strictly decreasing, and
+the per-trial impostor accept mass satisfies
+$q_i = \mathbb{E}_{P_{\mathrm{imp}}}[g(H)] \ge g(\mathbb{E}[H]) = (1-\mathbb{E}[H]/d)^{w}$. The gap
+$q_i - g(\mathbb{E}[H])$ is monotone under mean-preserving spreads of $P_{\mathrm{imp}}$ (the convex
+order), and to second order equals $\tfrac12 g''(\mathbb{E}[H])\,\mathrm{Var}(H)$ plus a third-moment
+term. At fixed mean $\mathbb{E}[H]=d/2$, larger impostor variance means larger $q_i$. ($g$ is decreasing and
+convex for $w\ge2$, so Jensen and the convex order apply, with the variance term the second-order
+Taylor coefficient.)
 \end{lemma}
-\begin{proof}
-\emph{Monotonicity and convexity.} $g'(h) = -(w/d)(1-h/d)^{w-1} \le 0$ on $[0,d]$, so $g$
-is decreasing; $g''(h) = \bigl(w(w-1)/d^2\bigr)(1-h/d)^{w-2} \ge 0$ for $w \ge 2$, so $g$
-is convex (strictly on $[0,d)$).
 
-\emph{Jensen.} Convexity gives $\mathbb{E}[g(H)] \ge g(\mathbb{E}[H])$, i.e.\
-\eqref{eq:jensen}.
-
-\emph{Monotone in the convex order.} If $H \le_{\mathrm{cx}} H'$ (equal means, $H'$ a
-mean-preserving spread of $H$), then $\mathbb{E}[g(H)] \le \mathbb{E}[g(H')]$ for every
-convex $g$, by definition of the convex order. Spreading $P_{\mathrm{imp}}$ at fixed mean
-can therefore only increase $q_i$.
-
-\emph{Second order.} Taylor-expanding around $\mu = \mathbb{E}[H]$,
-$\mathbb{E}[g(H)] = g(\mu) + \tfrac12 g''(\mu)\mathrm{Var}(H) +
-\tfrac16 g'''(\mu)\mathbb{E}[(H-\mu)^3] + \cdots$. Since $g'' \ge 0$, the variance term is
-non-negative; at $\mu = d/2$, $g''(d/2) = \bigl(w(w-1)/d^2\bigr)(1/2)^{w-2} > 0$, so the
-leading-order gap is strictly increasing in $\mathrm{Var}(H)$. \qed
-\end{proof}
-
-The rigorous statement is the convex-order one: a mean-preserving spread of
-$P_{\mathrm{imp}}$ strictly increases $q_i$. Plain variance is the operational,
-second-order surrogate for that statement, and it is what we track empirically; two laws
-with equal mean and variance but different skew can still differ in $q_i$ through
-$g'''$ and higher terms. The paper's central diagnostic fact --- an impostor law with
-$\sigma = 20.11$ against the uniform ideal $\sigma = 5.66$ at the identical mean $64$ ---
-is exactly such a mean-preserving spread, and Lemma~\ref{lem:jensen} is why it inflates
-$q_i$, and (Proposition~\ref{prop:tmin} below) the required $T$.
+The rigorous statement is the convex-order one; plain variance is its second-order, operational
+surrogate, and is what we track empirically. The paper's central diagnostic, an impostor law with
+$\sigma = 20.11$ against the uniform ideal $5.66$ at the same mean $64$, is exactly such a
+mean-preserving spread, which is why it inflates $q_i$ and, by Proposition~\ref{prop:tmin}, the
+required $T$.
 
 \begin{proposition}[Neyman--Pearson optimality of the count threshold]
 \label{prop:np}
-Fix $(w,T)$ and let $K$ be the number of colliding trials for a pair whose per-trial
-accept mass is $q \in \{q_i, q_g\}$, $q_g > q_i$. $K$ is a sufficient statistic for
-deciding genuine versus impostor within the family $K \sim \mathrm{Binomial}(T,q)$, and
-the likelihood ratio
-\begin{equation}
-\Lambda(k) \;=\; \frac{q_g^{\,k}(1-q_g)^{T-k}}{q_i^{\,k}(1-q_i)^{T-k}}
-\;=\; \left(\frac{q_g(1-q_i)}{q_i(1-q_g)}\right)^{\!k} \left(\frac{1-q_g}{1-q_i}\right)^{\!T}
-\end{equation}
-is monotone increasing in $k$. By the Neyman--Pearson lemma with a monotone likelihood
-ratio, the test ``accept iff $K \ge t$'' is uniformly most powerful at its size: among all
-decision rules on $T$ trials at fixed $(w,T)$, thresholding $K$ minimizes FRR at any given
-FAR.
+Fix $(w,T)$ and let $K$ be the colliding-trial count for a pair with per-trial mass
+$q \in \{q_i, q_g\}$, $q_g > q_i$. $K$ is a sufficient statistic for deciding genuine versus impostor
+within $K \sim \mathrm{Binomial}(T,q)$, and the likelihood ratio
+$\Lambda(k) = (q_g(1-q_i)/q_i(1-q_g))^{k}\,((1-q_g)/(1-q_i))^{T}$ is monotone increasing in $k$. By
+Neyman--Pearson with a monotone likelihood ratio, ``accept iff $K \ge t$'' is uniformly most powerful
+at its size: thresholding $K$ minimises FRR at any given FAR.
 \end{proposition}
-\begin{proof}
-$q_g > q_i \Rightarrow q_g(1-q_i)/\bigl(q_i(1-q_g)\bigr) > 1$, so $\Lambda(k)$ is
-increasing in $k$. The binomial family is exponential in $k$ with natural parameter
-$\log[q/(1-q)]$, monotone in $q$; a monotone likelihood ratio implies the Neyman--Pearson
-optimal test at any size is a threshold test on the sufficient statistic
-\cite{CoverThomas06}. \qed
-\end{proof}
 
-Proposition~\ref{prop:np} is a positive statement about the protocol as given: FLPSI's
-count-threshold accept rule is not an ad hoc heuristic but the optimal detector for the
-sufficient statistic the protocol computes. It does not, by itself, say how many rounds
-$T$ are required; that is next.
+So FLPSI's count-threshold rule is the optimal detector for the statistic the protocol computes, not
+an ad hoc heuristic. It does not by itself say how many rounds $T$ are needed; that is next.
 
 \begin{proposition}[Required $T$]
 \label{prop:tmin}
-Model $K \mid \text{impostor} \sim \mathcal{N}(Tq_i, Tq_i(1-q_i))$ and $K \mid
-\text{genuine} \sim \mathcal{N}(Tq_g, Tq_g(1-q_g))$. Placing $t$ to hit $\mathrm{FAR} =
-\alpha$ from the impostor (null) side and $\mathrm{FRR} = \beta$ from the genuine
-(alternative) side requires
-\begin{equation}
-t = Tq_i + z_\alpha\sqrt{Tq_i(1-q_i)}, \qquad t = Tq_g - z_\beta\sqrt{Tq_g(1-q_g)},
-\end{equation}
-with $z_\alpha = \Phi^{-1}(1-\alpha)$, $z_\beta = \Phi^{-1}(1-\beta)$. Equating and
-solving for $T$,
+Model $K \mid \text{impostor} \sim \mathcal{N}(Tq_i, Tq_i(1-q_i))$ and $K \mid \text{genuine} \sim
+\mathcal{N}(Tq_g, Tq_g(1-q_g))$. Placing $t$ to hit $\mathrm{FAR}=\alpha$ and $\mathrm{FRR}=\beta$
+requires, with $z_\alpha=\Phi^{-1}(1-\alpha)$, $z_\beta=\Phi^{-1}(1-\beta)$,
 \begin{equation}
 \label{eq:tmin-gauss}
-T_{\min} \;\approx\; \frac{\Bigl[z_\alpha\sqrt{q_i(1-q_i)} + z_\beta\sqrt{q_g(1-q_g)}\Bigr]^2}
+T_{\min} \;\approx\; \frac{\bigl[z_\alpha\sqrt{q_i(1-q_i)} + z_\beta\sqrt{q_g(1-q_g)}\bigr]^2}
 {(q_g - q_i)^2}.
 \end{equation}
-Equivalently, by the Chernoff--Stein lemma, fixing $\mathrm{FRR} \le \beta$ at a constant
-makes the minimal attainable FAR decay as $\mathrm{FAR} \doteq \exp\bigl(-T\cdot
-D(\mathrm{Bern}(q_g)\,\|\,\mathrm{Bern}(q_i))\bigr)$, so
-\begin{equation}
-\label{eq:tmin-stein}
-T_{\min} \;\approx\; \frac{\ln(1/\mathrm{FAR})}{D(\mathrm{Bern}(q_g)\,\|\,\mathrm{Bern}(q_i))},
-\qquad
-D(\mathrm{Bern}(a)\,\|\,\mathrm{Bern}(b)) = a\ln\frac{a}{b} + (1-a)\ln\frac{1-a}{1-b}.
-\end{equation}
 \end{proposition}
-\begin{proof}
-The Gaussian form follows the usual two-sided threshold-placement argument for a
-CLT approximation to a binomial count, matching $z_\alpha$ to the impostor/null spread
-$q_i(1-q_i)$ (type-I control) and $z_\beta$ to the genuine/alternative spread
-$q_g(1-q_g)$ (type-II control), then solving the two threshold equations for $T$. The
-error-exponent form is the Chernoff--Stein lemma \cite{CoverThomas06}: with one error
-probability held fixed, the other decays exponentially in $T$ at rate given by the
-relative entropy between the alternative and the null, in that order, because Stein's
-lemma fixes the type-II error and optimizes the type-I exponent under $H_1$. \qed
-\end{proof}
 
-Both forms make the same structural point: $T_{\min}$ scales as $1/(q_g-q_i)^2$ in the
-Gaussian form and inversely with a KL divergence between $\mathrm{Bern}(q_g)$ and
-$\mathrm{Bern}(q_i)$ in the exponential form, so shrinking $q_i$ --- which
-Lemma~\ref{lem:jensen} ties directly to the impostor-Hamming variance --- simultaneously
-widens the gap $q_g - q_i$ and grows the divergence, and is the dominant lever on the
-number of rounds the protocol needs. (If instead FAR is held fixed and FRR is driven
-down, the exponent is $D(\mathrm{Bern}(q_i)\,\|\,\mathrm{Bern}(q_g))$ rather than
-\eqref{eq:tmin-stein}; KL divergence is asymmetric, and which error is held fixed
-determines which direction applies. We report \eqref{eq:tmin-stein}, the statement
-relevant to reaching a FAR target at a fixed true-accept rate.)
+$T_{\min}$ scales as $1/(q_g-q_i)^2$, so shrinking $q_i$, which Lemma~\ref{lem:jensen} ties to the
+impostor variance, widens the gap and is the dominant lever on the rounds the protocol needs.
 
-\paragraph{Finite-$T$ caveat.} Proposition~\ref{prop:tmin} is asymptotic --- a CLT
-approximation and a large-deviation exponent. At the small $T$ actually deployed (e.g.\
-$T=18$) we use the exact binomial tail $\Pr[K \ge t]$ for design, and validate the result
-against the real cryptographic binary rather than the asymptotic formula alone: at
-$(w,t,T) = (6,3,18)$ the feature-head code (\S\ref{sec:binarisers}) gives measured TAR
-97.0\% and measured FAR $8.02\times10^{-3}$ ($0.80\%$) against a predicted $8.12\times10^{-3}$,
-and earlier codes matched their binomial
-predictions essentially exactly. We present the
-asymptotics of Proposition~\ref{prop:tmin} as design guidance and the executed protocol
-as ground truth (\S\ref{sec:eval}).
+\paragraph{Finite-$T$ caveat.} Proposition~\ref{prop:tmin} is asymptotic. At the small $T$ deployed
+($T=18$) we use the exact binomial tail for design and validate against the real cryptographic binary:
+at $(w,t,T) = (6,3,18)$ the feature-head code (\S\ref{sec:binarisers}) gives measured TAR $97.0\%$ and
+measured FAR $8.02\times10^{-3}$ against a predicted $8.12\times10^{-3}$, and earlier codes matched
+their binomial predictions essentially exactly. We present the asymptotics as design guidance and the
+executed protocol as ground truth (\S\ref{sec:eval}).
 
 \subsubsection{The variance decomposition and the covariance floor}
 
-Lemma~\ref{lem:jensen} and Proposition~\ref{prop:tmin} together reduce the entire design
-problem to one target: minimize $\mathrm{Var}(H_{\mathrm{imp}})$ at a mean that keeps
-$q_g$ usable. The next theorem shows this variance decomposes into a diagonal term with a
-hard ceiling and an off-diagonal covariance term with no floor other than zero, which
-identifies exactly what a good code must remove.
-
-For an impostor pair, write $p_i = \Pr[D_i = 1] = \mathbb{E}[D_i]$ for the per-position
-impostor flip probability, so $\mathbb{E}[H] = \sum_i p_i$ and $\mathrm{Var}(D_i) =
-p_i(1-p_i)$.
+Lemma~\ref{lem:jensen} and Proposition~\ref{prop:tmin} reduce the design problem to one target:
+minimise $\mathrm{Var}(H_{\mathrm{imp}})$ at a mean that keeps $q_g$ usable. The next theorem shows
+where that variance comes from. For an impostor pair write $p_i = \Pr[D_i=1]$, so $\mathbb{E}[H] =
+\sum_i p_i$ and $\mathrm{Var}(D_i) = p_i(1-p_i)$.
 
 \begin{theorem}[Variance decomposition and the covariance floor]
 \label{thm:variance}
@@ -257,299 +106,114 @@ p_i(1-p_i)$.
 \mathrm{Var}(H_{\mathrm{imp}}) \;=\; \sum_{i=1}^{d} p_i(1-p_i) \;+\; \sum_{i \neq j}
 \mathrm{Cov}(D_i,D_j).
 \end{equation}
-The diagonal term is bounded, $p_i(1-p_i) \le 1/4$ with equality iff $p_i = 1/2$
-(a balanced bit), so $\sum_i p_i(1-p_i) \le d/4$, attained exactly at full balance. The
-uniform/max-entropy reference code has every $p_i = 1/2$ and every
-$\mathrm{Cov}(D_i,D_j) = 0$, giving $H \sim \mathrm{Binomial}(d,1/2)$,
-$\mathrm{Var} = d/4$, $\sigma = \sqrt{d}/2$ ($= 5.657$ at $d=128$). Consequently every
-unit of impostor variance above the binomial floor $d/4$ is positive inter-bit
-covariance: at full balance $\mathrm{Var}(H) - d/4 = \sum_{i\neq j}\mathrm{Cov}(D_i,D_j)$,
-and if the bits are not fully balanced then $\sum_i p_i(1-p_i) < d/4$, so the covariance
-surplus required to explain the observed variance is even larger.
+The diagonal term obeys $p_i(1-p_i)\le 1/4$ with equality iff $p_i=1/2$, so $\sum_i p_i(1-p_i)\le d/4$,
+attained at full balance. The uniform/max-entropy code has every $p_i=1/2$ and every
+$\mathrm{Cov}(D_i,D_j)=0$, giving $H \sim \mathrm{Binomial}(d,1/2)$, $\mathrm{Var}=d/4$,
+$\sigma=\sqrt{d}/2$ ($=5.657$ at $d=128$). Every unit of variance above the floor $d/4$ is therefore
+positive inter-bit covariance. (Bilinearity of variance on $H=\sum_i D_i$ gives \eqref{eq:vardecomp};
+$p(1-p)\le1/4$ is maximised at $p=1/2$; the floor identity is \eqref{eq:vardecomp} rearranged.)
 \end{theorem}
-\begin{proof}
-Bilinearity of variance applied to the sum $H = \sum_i D_i$ of dependent Bernoullis gives
-\eqref{eq:vardecomp} directly. The bound $p(1-p) \le 1/4$ is elementary, maximized at
-$p=1/2$. The reference-code moments are those of $\mathrm{Binomial}(d,1/2)$. The floor
-identity is \eqref{eq:vardecomp} rearranged. \qed
-\end{proof}
 
-\begin{table}[htbp]
-\centering
-\caption{Measured impostor moments and the implied covariance surplus over the balanced
-diagonal ceiling $d/4 = 32$ (Theorem~\ref{thm:variance}), $d=128$.}
-\label{tab:covariance-surplus}
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-code & mean & $\sigma$ & $\mathrm{Var}(H) = \sigma^2$ \\
-\midrule
-Super-Bit & 64.05 & 20.11 & 404.5 \\
-ortho-thermometer (\S\ref{sec:ortho-thermo}) & 47.27 & 14.60 & 213.2 \\
-feature-head (\S\ref{sec:featurehead}) & 64.09 & 6.72 & 45.2 \\
-\bottomrule
-\end{tabular}
-\end{table}
+The three codes instantiate this against the balanced diagonal ceiling $d/4=32$. Super-Bit is balanced
+(mean $64.05$, $\sigma=20.11$, $\mathrm{Var}=404.5$), so $\sum_i \mathrm{Var}(D_i) \approx 32$ and the
+residual covariance $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j) \approx 372.5 \gg 0$. The ortho-thermometer
+code (mean $47.27$, $\sigma=14.60$) is not fully balanced, so its diagonal ceiling is already below
+$32$; the feature-head code (mean $64.09$, $\sigma=6.72$, $\mathrm{Var}=45.2$) is balanced and near the
+floor, with covariance surplus $\approx 13.2$.
 
-Table~\ref{tab:covariance-surplus} instantiates Theorem~\ref{thm:variance} on the three
-codes evaluated in this paper. Super-Bit is balanced (mean $\approx d/2$), so
-$\sum_i \mathrm{Var}(D_i) \approx 32$ and the residual $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j)
-\approx 404.5 - 32 = 372.5 \gg 0$. The ortho-thermometer code is not fully balanced
-(mean $47.3$), so its diagonal ceiling is already below $32$, and the feature-head code is
-both balanced and near the covariance floor, $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j) \approx
-45.2 - 32 = 13.2$.
-
-\begin{corollary}[What to minimize]
+\begin{corollary}[What to minimise]
 \label{cor:target}
-Among all impostor laws with mean $d/2$, $\mathrm{Var}(H_{\mathrm{imp}})$ --- and hence,
-by Lemma~\ref{lem:jensen} (to second order, or exactly in the convex order), $q_i$; and
-hence, by Proposition~\ref{prop:tmin}, $T$; and hence, by~(A4), online communication; and
-hence the achievable $(\mathrm{FAR},\mathrm{FRR})$ operating point --- is minimized by the
-\textbf{balanced and decorrelated} code, whose impostor law is $\mathrm{Binomial}(d,1/2)$
-with $\sigma = 5.66$. Accuracy and communication are governed by the same scalar
-functional of the code, so a single improvement to the code improves both. This is the
-paper's central mechanism: the measured impostor $\sigma$ ladder $20.11 \to 14.60 \to
-6.72$ tracks the equal-error-rate ladder $1.89\%\;[1.57,2.22] \to 0.87\%\;[0.62,0.99] \to
-0.17\%\;[0.06,0.26]$ and the per-query communication at $N=5000$, $4317 \to 2377$~KB
-($-45\%$ from ortho-thermometer to feature-head).
+Among impostor laws with mean $d/2$, $\mathrm{Var}(H_{\mathrm{imp}})$, and hence by
+Lemma~\ref{lem:jensen} $q_i$, by Proposition~\ref{prop:tmin} $T$, by (A4) online communication, and
+hence the achievable $(\mathrm{FAR},\mathrm{FRR})$, is minimised by the balanced and decorrelated code
+whose impostor law is $\mathrm{Binomial}(d,1/2)$ with $\sigma = 5.66$. A single improvement to the code
+improves accuracy and communication together. The measured impostor $\sigma$ ladder
+$20.11 \to 14.60 \to 6.72$ tracks the EER ladder $1.89\% \to 0.87\% \to 0.17\%$ and the per-query
+communication at $N=5000$, $4317 \to 2377$\,KB ($-45\%$).
 \end{corollary}
 
-\subsubsection{The feature-head objective as a relaxation of Corollary~\ref{cor:target}}
+\subsubsection{The feature-head objective relaxes Corollary~\ref{cor:target}}
 
-Corollary~\ref{cor:target} specifies a population program: minimize the covariance
-surplus $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j)$ subject to $\mathbb{E}[D_i] = 1/2$ for all
-$i$ (balance, hence $\mathbb{E}[H]=d/2$) and a small genuine Hamming distance
-$\mathbb{E}_{\mathrm{gen}}[H]$ (so that $q_g$ stays large enough that the feasible set is
-non-trivial). The learned feature-head (\S\ref{sec:featurehead}) is trained against a loss
-\begin{equation}
-\mathcal{L} \;=\; \lambda_{\mathrm{gen}}\cdot\mathcal{L}_{\mathrm{gen}} \;+\;
-\lambda_{\mathrm{bal}}\cdot\mathcal{L}_{\mathrm{bal}} \;+\;
-\lambda_{\mathrm{dec}}\cdot\mathcal{L}_{\mathrm{dec}} \;+\;
-\lambda_{q}\cdot\mathcal{L}_{\mathrm{STE}}
-\end{equation}
-with $(\lambda_{\mathrm{dec}},\lambda_{\mathrm{bal}},\lambda_q) = (30,5,0.1)$.
+Corollary~\ref{cor:target}'s population program (minimise $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j)$ subject
+to $\mathbb{E}[D_i]=1/2$ and small $\mathbb{E}_{\mathrm{gen}}[H]$) is realised by training the
+feature-head against $\mathcal{L} = \lambda_{\mathrm{gen}}\mathcal{L}_{\mathrm{gen}} +
+\lambda_{\mathrm{bal}}\mathcal{L}_{\mathrm{bal}} + \lambda_{\mathrm{dec}}\mathcal{L}_{\mathrm{dec}} +
+\lambda_{q}\mathcal{L}_{\mathrm{STE}}$ with $(\lambda_{\mathrm{dec}},\lambda_{\mathrm{bal}},\lambda_q) =
+(30,5,0.1)$.
 
 \begin{theorem}[The feature-head loss is a sampled relaxation of the population program]
 \label{thm:relaxation}
-Term by term, $\mathcal{L}$ is a differentiable, sample-average surrogate of the program
-implied by Corollary~\ref{cor:target}: $\mathcal{L}_{\mathrm{bal}}$ pins
-$\mathbb{E}[D_i]=1/2$, enforcing the balance constraint; $\mathcal{L}_{\mathrm{dec}}$
-penalizes the off-diagonal empirical bit-covariance matrix, driving
-$\sum_{i\neq j}\mathrm{Cov}(D_i,D_j)\to 0$, which is the objective itself;
-$\mathcal{L}_{\mathrm{gen}}$ keeps $\mathbb{E}_{\mathrm{gen}}[H]$ small, i.e.\ feasibility
-and a usable $q_g$; and the straight-through estimator in $\mathcal{L}_{\mathrm{STE}}$
-makes the otherwise non-differentiable sign binarisation trainable.
+Term by term, $\mathcal{L}$ is a differentiable, sample-average surrogate of that program:
+$\mathcal{L}_{\mathrm{bal}}$ pins $\mathbb{E}[D_i]=1/2$; $\mathcal{L}_{\mathrm{dec}}$ penalises the
+off-diagonal bit covariance, driving $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j)\to 0$;
+$\mathcal{L}_{\mathrm{gen}}$ keeps $\mathbb{E}_{\mathrm{gen}}[H]$ small; and the straight-through
+estimator makes the sign binarisation trainable.
 \end{theorem}
-\begin{proof}[Correspondence, stated as tightly as is honest]
-\emph{Exact at the level of the second-moment functional.} $\mathrm{Var}(H_{\mathrm{imp}})$
-depends only on the first and second moments $\{p_i\}, \{\mathrm{Cov}(D_i,D_j)\}$
-(Theorem~\ref{thm:variance}), a linear --- hence convex --- functional of the bit
-second-moment matrix. Balancing ($p_i=1/2$) and zeroing the off-diagonal covariance
-therefore attains the exact variance floor $d/4$ with no dependence on higher moments,
-so the balance-plus-decorrelation objective is a \emph{tight} surrogate for the variance
-objective, and the population program is convex in the bit second-moment matrix.
 
-\emph{Heuristic step (flagged, not glossed over).} The map from network weights to
-$\{p_i, \mathrm{Cov}(D_i,D_j)\}$ is non-convex, and the straight-through sign estimator is
-a biased gradient surrogate for the true (zero-a.e.) gradient of the sign function. The
-convexity claim above holds for the objective \emph{as a functional of the code's bit
-distribution}, not for the optimization landscape over network weights; we do not claim,
-and this theorem does not establish, global optimality of trained solutions.
+Because $\mathrm{Var}(H_{\mathrm{imp}})$ depends only on $\{p_i\},\{\mathrm{Cov}(D_i,D_j)\}$
+(Theorem~\ref{thm:variance}), balance plus decorrelation is a tight, convex surrogate for it. Two
+caveats hold: the map from weights to those moments is non-convex and the straight-through estimator
+biased, so the convexity is of the objective as a functional of the bit distribution, not of the
+optimisation landscape (no global-optimality claim); and a variance floor is not a law, so zeroing
+linear covariance does not force the impostor law to $\mathrm{Binomial}(d,1/2)$, read instead as
+``moves toward the uniform ideal'', consistent with $\sigma \to 6.72 \approx 5.66$. Full proof in the
+extended version.
 
-\emph{Honest gap: a variance floor is not a law.} Zero linear covariance does not imply
-independence, and matching the first two moments does not force the full impostor law to
-$\mathrm{Binomial}(d,1/2)$; higher moments are uncontrolled. What
-Corollary~\ref{cor:target} actually requires is only the variance, via the second-order
-term of Lemma~\ref{lem:jensen}, and balance-plus-decorrelation pins that exactly; the
-stronger statement ``the impostor law converges to $\mathrm{Binomial}(d,1/2)$'' is
-moment-matching evidence, not a proved law-convergence result, and should be read as
-``moves toward the uniform ideal'' --- consistent with the observed $\sigma \to 6.72
-\approx 5.66$, not as an exact-law theorem.
-
-\emph{Sample-average approximation.} The losses are computed as empirical covariances
-over minibatches of impostor pairs, which are consistent estimators of the corresponding
-population moments; the trained objective is thus the standard sample-average
-approximation of the population program, with the usual SAA consistency guarantees and no
-stronger claim than that. \qed
-\end{proof}
-
-Theorem~\ref{thm:relaxation} is deliberately not a claim that the feature-head ``beats''
-the protocol. It co-designs the code \emph{for} the protocol's own optimal decision rule
-(Proposition~\ref{prop:np}), pushing the impostor law toward the point at which the
-protocol's sufficient statistic is maximally informative. There is also a real tension
-the theorem does not resolve: tightening $\sigma$ can raise the \emph{genuine} Hamming
-distance as a side effect, which lowers $q_g$; the
-single-finger EER and communication improvements reported here are robust, but
-multi-sample fusion is a tunable trade-off rather than an unconditional win.
+The theorem co-designs the code \emph{for} the protocol's own optimal decision rule
+(Proposition~\ref{prop:np}). One tension it does not resolve: tightening $\sigma$ can raise the
+\emph{genuine} Hamming distance, which lowers $q_g$, so the single-finger EER and communication wins
+are robust while multi-sample fusion stays a tunable trade-off.
 
 \subsubsection{Effective bits and the collision floor}
-\label{sec:effbits}
 
-The variance functional also gives a rigorous degrees-of-freedom estimate. Modelling the
-impostor Hamming \emph{fraction} $X = H/d$ as $\mathrm{Binomial}(m_{\mathrm{eff}},p)/m_{\mathrm{eff}}$
-with per-comparison success $p = \mathbb{E}[H]/d$ and matching the variance of the
-fraction, $\mathrm{Var}(X) = \sigma^2/d^2 = p(1-p)/m_{\mathrm{eff}}$, gives
+The variance functional also gives a degrees-of-freedom estimate: matching the variance of the
+impostor Hamming fraction $H/d$ to a binomial gives the Daugman effective-bits
+estimator~\cite{Daugman03}
 \begin{equation}
 \label{eq:meff}
-m_{\mathrm{eff}} \;=\; \frac{p(1-p)\,d^2}{\sigma^2} \;=\; \frac{d^2}{4\sigma^2} \quad
-\text{at balance } (p=1/2),
+m_{\mathrm{eff}} = \frac{p(1-p)\,d^2}{\sigma^2} = \frac{d^2}{4\sigma^2} \quad\text{at balance},
 \end{equation}
-the Daugman effective-bits estimator \cite{Daugman03}. As a sanity check, the ideal
-uniform code has $\sigma = \sqrt{d}/2$, giving $m_{\mathrm{eff}} = d$. Table~\ref{tab:meff}
-applies \eqref{eq:meff} to the three measured codes.
+with $m_{\mathrm{eff}}=d$ for the ideal code. A 16-dimensional embedding bottleneck caps Super-Bit at
+$\approx10$ effective bits of 128, while the wider convolutional representation the feature-head codes
+lifts it to $90.7$; numeric values with a participation-ratio check are in \S\ref{sec:effbits-params}.
 
-\begin{table}[htbp]
-\centering
-\caption{Daugman effective bits $m_{\mathrm{eff}} = p(1-p)d^2/\sigma^2$ of $d=128$
-nominal bits, from measured moments.}
-\label{tab:meff}
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-code & $\sigma$ & $p$ & $m_{\mathrm{eff}}$ \\
-\midrule
-Super-Bit & 20.11 & 0.500 & 10.1 \\
-ortho-thermometer & 14.60 & 0.369 & 17.9 \\
-feature-head & 6.72 & 0.501 & 90.7 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Recovering effective bits explains \emph{why} the design in \S\ref{sec:binarisers} works:
-a 16-dimensional embedding bottleneck limits Super-Bit to roughly 10 effective bits of
-128 nominal, near a structural ceiling; the wider convolutional feature representation
-used by the feature-head lifts that ceiling toward $90.7$ (participation-ratio estimate
-$84.6$). No dedicated fragile-bits measurement exists on the feature-head code; the
-value above is derived from the measured $\sigma$, not from an independent fragile-bits
-run.
-
-\paragraph{An alternative, distribution-free rigor: the MCR\textsuperscript{2} coding rate.}
-Daugman's $m_{\mathrm{eff}}$ assumes a binomial fit to the Hamming fraction. A
-distribution-free count of independent coding directions is given by the maximal
-coding-rate-reduction (MCR\textsuperscript{2}) rate \cite{YuEtAl20}: for unit feature
-vectors stacked as columns of $Z \in \mathbb{R}^{p\times n}$ at quantization precision
-$\varepsilon$,
-\begin{equation}
-R(Z,\varepsilon) \;=\; \tfrac12 \log\det\Bigl(I_p + \tfrac{p}{n\varepsilon^2} ZZ^\top\Bigr)
-\quad \text{(nats)},
-\end{equation}
-with the per-class rate $R_c$ and rate-reduction $\Delta R = R - \sum_c (n_c/n) R_c$
-formalizing the same ``spread-out yet within-class-compact'' target as
-Theorem~\ref{thm:relaxation}; quantifying $R(Z,\varepsilon)$ and $\Delta R$ for the
-Super-Bit, ortho-thermometer, and feature-head embeddings directly is left to future
-work.
-
-\begin{corollary}[The collision floor is a sphere-packing bound]
+\begin{corollary}[Collision floor]
 \label{cor:floor}
-Since $q(0) = 1$, $\Pr[\text{accept}\mid H=0] = 1$ for every choice of $(w,t,T)$; hence
-the probability of a zero-Hamming impostor collision, $p_0$, is a hard lower bound on the
-per-record false-accept rate for any FLPSI parameterization over a fixed code, and it
-propagates to $\mathrm{FAR}_{\mathrm{query}} = 1-(1-p_0)^N$ at 1:$N$ identification.
-Bounding $p_0$ away from zero is a coding question: packing $N$ identity balls of
-genuine intra-class radius $r_{\mathrm{gen}}$ into $\{0,1\}^d$ at pairwise minimum
-distance $2r_{\mathrm{gen}}+1$ is constrained by classical binary-code bounds
-(Hamming/sphere-packing $N \le 2^d/\sum_{k=0}^{r}\binom{d}{k}$, Singleton, Plotkin at
-large relative distance). The binding quantity is the \emph{effective} dimension
-$m_{\mathrm{eff}}$ of \S\ref{sec:effbits}, not the nominal $d$: a rank-limited code lives
-in an effective space of size $2^{m_{\mathrm{eff}}}$, so raising $d$ without raising
-$m_{\mathrm{eff}}$ leaves the packing budget --- and the floor --- essentially unchanged,
-which is exactly what a dimension sweep on Super-Bit shows.
+Since $q(0)=1$, $\Pr[\text{accept}\mid H=0]=1$ for every $(w,t,T)$, so the zero-Hamming impostor
+collision probability $p_0$ lower-bounds the per-record FAR for any parameterization and propagates to
+$\mathrm{FAR}_{\mathrm{query}}=1-(1-p_0)^N$. Bounding $p_0$ away from zero is a coding question governed
+by the \emph{effective} dimension $m_{\mathrm{eff}}$, not the nominal $d$ (sphere-packing/Singleton/
+Plotkin on the effective code), so raising $d$ without raising $m_{\mathrm{eff}}$ leaves the floor
+essentially unchanged, as a Super-Bit dimension sweep shows.
 \end{corollary}
-\begin{proof}
-Immediate from $q(0)=1$ and the union/inclusion-exclusion bound over $N$ enrolled
-identities for the 1:$N$ propagation; the sphere-packing, Singleton, and Plotkin bounds
-are the classical coding-theory bounds applied to the effective code, restated here as a
-corollary of the effective-dimension characterization rather than re-derived. \qed
-\end{proof}
 
-The floor is a diagnostic, not a verdict: the better codes in this paper drive the
-measured collision count to zero on the held-out set (Table~\ref{tab:floor}); we recommend
-reporting the $H=0$ count on held-out data as a standard diagnostic for any binariser.
-
-\begin{table}[htbp]
-\centering
-\caption{Measured zero-Hamming impostor collisions, probe$\times$gallery pairs (canonical
-operational definition; excludes enrol--enrol pairs), with exact 95\% Poisson/Clopper
-intervals.}
-\label{tab:floor}
-\begin{tabular}{@{}lrrl@{}}
-\toprule
-code & collisions / pairs & $p_0$ & 95\% CI \\
-\midrule
-Super-Bit & $2 / 1{,}438{,}800$ & $1.39\times10^{-6}$ & $[1.68\times10^{-7}, 5.02\times10^{-6}]$ \\
-ortho-thermometer & $0$ & $0$ & upper $2.56\times10^{-6}$ (one-sided) \\
-feature-head & $0$ & $0$ & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsubsection{Lower-bound positioning}
-\label{sec:lowerbound}
-
-Chakrabarti and Regev prove an $\Omega(n)$ communication lower bound for
-\textsc{Gap-Hamming-Distance} \cite{ChakrabartiRegev11}, but only under the hard promise
-$|H-n/2| \ge \sqrt{n}$, a $\Theta(\sqrt{n})$ gap. Biometric matching operates in the
-\emph{easy}, constant-fraction-gap regime instead: measured genuine mean Hamming distance
-is roughly 7--17 bits against an impostor mean of roughly 47--64 bits at $d=128$ ---
-a $\Theta(d)$ gap,
-far outside the $\sqrt{n}$-promise hardness regime. The $\Omega(n)$ wall therefore does
-not apply here, and there is genuine room for sub-linear communication; online
-communication in our protocol is bounded instead by the cryptographic realization (OPRF
-and OT cost scaling with $T$), which is exactly the quantity Corollary~\ref{cor:target}
-lowers. Ghosh and Simkin separately show an $\Omega(t)$ communication lower bound for
-threshold-PSI in the threshold parameter $t$ \cite{GhoshSimkin19}, a bound in a different
-(set-intersection-size) model that is related but does not directly bound label-revealing
-fuzzy PSI. We are not aware of a tight communication lower bound in the literature for
-label-revealing FLPSI in the constant-fraction-gap regime; whether our $T$ is close to
-optimal is therefore an open question, and we state it as such rather than claim
-optimality.
+As a diagnostic, Super-Bit has $2/1{,}438{,}800$ zero-Hamming impostor collisions on the held-out
+probe$\times$gallery set ($p_0 = 1.39\times10^{-6}$), while both co-designed codes drive the count to
+$0$; we recommend reporting the held-out $H=0$ count for any binariser.
 
 \subsection{Two binariser instantiations}
 \label{sec:binarisers}
 
-Corollary~\ref{cor:target} and Theorem~\ref{thm:relaxation} give a single design target
--- balance the bits and decorrelate them, at a mean that keeps genuine Hamming distance
-small. We give two binarisers realizing this target at different points on the
-training-cost/accuracy trade-off.
+The target is one thing: balance the bits and decorrelate them, at a mean that keeps genuine Hamming
+distance small. We give two binarisers at different points on the training-cost/accuracy trade-off.
 
-\subsubsection{Training-free: the metric-aware ortho-thermometer}
-\label{sec:ortho-thermo}
+\paragraph{Training-free: the metric-aware ortho-thermometer.}\label{sec:ortho-thermo}
+This code needs no training beyond the extractor in use. It replaces a single random-hyperplane sign
+per output dimension with a per-dimension thermometer code from block-orthonormalised projection
+directions and population calibration statistics, so Hamming distance under the accept rule tracks the
+extractor's native angular (cosine) metric rather than a raw per-axis threshold. Being training-free it
+is metric-\emph{aware}, not metric-\emph{learned}: it corrects the mismatch between an angular embedding
+and a Hamming matcher without touching the network, dropping the impostor standard deviation from
+$20.11$ to $14.60$ by improving balance and, less so, decorrelation.
 
-The ortho-thermometer code requires no training beyond the feature extractor already in
-use. It replaces a single random-hyperplane sign per output dimension with a
-per-dimension thermometer code built from block-orthonormalised projection directions and
-population calibration statistics, so that Hamming distance under the sub-sampling
-accept rule tracks the extractor's native angular (cosine) metric rather than a raw
-per-axis threshold. Because it is training-free it is metric-\emph{aware} rather than
-metric-\emph{learned}: it corrects the mismatch between an angular embedding space and a
-Hamming-distance matcher without altering the network's weights or objective. Measured
-against Corollary~\ref{cor:target}'s target, it reduces the impostor standard deviation
-from $\sigma=20.11$ (Super-Bit) to $\sigma=14.60$ by improving balance and, to a lesser
-extent, decorrelation, without a learning signal that explicitly penalizes covariance.
+\paragraph{Quantization-aware: the learned feature-head.}\label{sec:featurehead}
 
-\subsubsection{Quantization-aware: the learned feature-head}
-\label{sec:featurehead}
-
-The feature-head instantiates Theorem~\ref{thm:relaxation}'s program directly as a
-training objective on top of the wider convolutional feature representation (rather than
-the 16-dimensional bottleneck feeding Super-Bit), realizing the target of
-Corollary~\ref{cor:target} to a much tighter approximation:
-\begin{itemize}
-\item \textbf{Bit-balance loss} $\mathcal{L}_{\mathrm{bal}}$ penalizes deviation of each
-  bit's empirical mean from $1/2$, enforcing $\mathbb{E}[D_i]=1/2$ (measured impostor
-  mean $\to 64.1$, balance mean $\to 0.499$).
-\item \textbf{Bit-decorrelation loss} $\mathcal{L}_{\mathrm{dec}}$ penalizes the
-  off-diagonal norm $\lVert \hat C - \mathrm{diag}(\hat C)\rVert$ of the empirical bit
-  covariance/correlation matrix, directly targeting the $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j)$
-  term of Theorem~\ref{thm:variance}.
-\item \textbf{Genuine-closeness loss} $\mathcal{L}_{\mathrm{gen}}$ keeps
-  $\mathbb{E}_{\mathrm{gen}}[H]$ small, maintaining feasibility (a usable $q_g$) while the
-  other two terms drive the impostor law toward the balanced, decorrelated target.
-\item \textbf{Straight-through estimator} $\mathcal{L}_{\mathrm{STE}}$ supplies a biased
-  but trainable gradient surrogate through the non-differentiable sign binarisation, as
-  flagged in the heuristic step of Theorem~\ref{thm:relaxation}'s proof.
-\end{itemize}
-The result is the $\sigma = 6.72$, $m_{\mathrm{eff}} \approx 91$ code used as the
-paper's best operating point throughout \S\ref{sec:eval}; it is the closest of the three
-codes to the balanced, decorrelated target that Theorem~\ref{thm:variance} and
-Corollary~\ref{cor:target} identify as jointly accuracy- and communication-optimal, with
-the caveats on exactness stated in Theorem~\ref{thm:relaxation}'s proof carried forward
-honestly rather than dropped.
+The feature-head instantiates Theorem~\ref{thm:relaxation} directly on the wider convolutional
+representation rather than the 16-dimensional bottleneck feeding Super-Bit. A bit-balance loss pins
+each bit's mean to $1/2$ (measured balance $\to 0.499$); a bit-decorrelation loss penalises the
+off-diagonal bit covariance, targeting the $\sum_{i\neq j}\mathrm{Cov}(D_i,D_j)$ term of
+Theorem~\ref{thm:variance}; a genuine-closeness loss keeps $\mathbb{E}_{\mathrm{gen}}[H]$ small; and a
+straight-through estimator gives a trainable gradient through the sign binarisation. The result is the
+$\sigma = 6.72$, $m_{\mathrm{eff}} \approx 91$ code used throughout \S\ref{sec:eval}, the closest of
+the three to the balanced, decorrelated target, with the caveats of Theorem~\ref{thm:relaxation}
+carried forward.

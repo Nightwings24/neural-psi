@@ -1,139 +1,76 @@
 \section{Introduction}
 \label{sec:intro}
 
-In 2015 the United States Office of Personnel Management disclosed that attackers had
-exfiltrated the records of 21.5 million people, including 5.6 million
-fingerprints~\cite{Gootman16}. The passwords in that breach were reset within days. The
-fingerprints could not be: a compromised biometric is compromised permanently. This
-asymmetry is why ISO/IEC 24745~\cite{ISO24745} requires three properties of any stored
-biometric reference --- \emph{irreversibility}, so the reference cannot be inverted to the
-biometric; \emph{unlinkability}, so references for the same subject in different databases
-cannot be correlated; and \emph{renewability}, so a compromised reference can be replaced
-by a fresh one derived from the same trait. The first requirement is not paranoia: inverse
-biometrics is now a demonstrated reconstruction threat against
-representations once assumed one-way~\cite{GomezBarreroGalbally20}, so ``store the template
-encrypted, or not at all'' is the only defensible default.
+When attackers took 5.6 million fingerprints in the 2015 U.S.\ Office of Personnel Management
+breach~\cite{Gootman16}, the passwords were reset within days; the fingerprints could not be, because
+a compromised biometric stays compromised. This is why ISO/IEC 24745~\cite{ISO24745} asks a stored
+biometric reference to be \emph{irreversible} (not invertible to the trait), \emph{unlinkable} (not
+correlatable across databases), and \emph{renewable} (replaceable from the same trait). Irreversibility
+is not a formality: inverse biometrics now reconstructs traits from representations once assumed
+one-way~\cite{GomezBarreroGalbally20}, so the only defensible default is to store the template
+encrypted, or not at all.
 
-Systems that keep templates encrypted end-to-end address this directly, and homomorphic
-encryption is the mature route. Blind-Touch~\cite{ChoiWooKim24} is the current reference
-point: it evaluates the matching step under CKKS~\cite{CKKS17} so that the server never sees
-a plaintext template. The guarantee is strong, and its costs are structural rather than
-incidental. A 117\,MB Galois rotation key must be distributed to every client; each query
-ciphertext is 856\,KB; and because the scheme packs 512 users into one ciphertext, the
-database is organised around a slot-packing ceiling rather than around the workload.
-Blind-Match~\cite{BlindMatch24} pushes $1{:}N$ throughput substantially, but it inherits the
-same key-material and packing regime --- the cost is architectural to homomorphic matching,
-not to any one instantiation of it.
+Homomorphic encryption is the mature route. Blind-Touch~\cite{ChoiWooKim24} runs the matching step
+under CKKS~\cite{CKKS17} so the server never sees a plaintext template, but the costs are structural: a
+117\,MB Galois rotation key per client, an 856\,KB query ciphertext, and a database organised around a
+512-user slot-packing ceiling. Blind-Match~\cite{BlindMatch24} raises $1{:}N$ throughput but keeps the
+same regime, so the cost belongs to homomorphic matching itself. Fuzzy-labelled private set
+intersection (FLPSI)~\cite{UzunEtAl21} offers a different trade: a client learns only the \emph{label}
+on a server record within Hamming distance of its query, at communication linear in $N$, with no key
+material of consequence and no packing ceiling, and the server learns only whether a match occurred.
+We use Bui and Cong's vector ring-OLE backend~\cite{BuiCong25}. But FLPSI matches bit-strings under
+Hamming distance, and a fingerprint is not a bit-string: the \emph{binariser} from embedding to
+fixed-length code closes that gap, and in the pipelines we know of it is an afterthought, a generic
+LSH map~\cite{Charikar02,JiEtAl12} bolted on without regard for the matcher it feeds.
 
-Fuzzy-labelled private set intersection (FLPSI) offers a different trade. Introduced by
-Uzun et al.\ for private real-time biometric search~\cite{UzunEtAl21}, FLPSI lets a client
-learn only the \emph{label} attached to a server record within Hamming distance of its
-query, at communication linear in the database size, with no key material of consequence
-and no packing ceiling; the server learns nothing about the query beyond whether it
-matched. We use Bui and Cong's vector ring-OLE construction~\cite{BuiCong25} as the concrete
-efficient backend. This is the star primitive of this paper: a private matcher whose cost
-structure is fundamentally lighter than a homomorphic one. But FLPSI matches
-\emph{bit-strings} under Hamming distance, and a fingerprint is not a bit-string. The
-\emph{binariser} --- the map from a learned embedding to a fixed-length binary code --- is
-the interface that closes this gap, and in every neural-plus-crypto pipeline we are aware of
-it is treated as an afterthought: a generic, off-the-shelf LSH map~\cite{Charikar02,JiEtAl12}
-bolted on without regard for the matcher it feeds.
+\paragraph{The central observation.} The binariser is not a neutral adapter. Under FLPSI's sub-sample
+accept rule (draw $T$ random $w$-position masks, accept once at least $t$ collide), one statistic of
+the code, the distribution of Hamming distances to \emph{impostor} codes, sets both the false-accept
+rate at fixed $T$ and the number of sub-samples $T$ the protocol must exchange to reach a target.
+Accuracy and communication are two readings of one objective: push the impostor-Hamming distribution
+toward the maximum-entropy $\mathrm{Binomial}(d,\tfrac12)$ the protocol's parameter choice assumes. We
+formalise this in \S\ref{sec:design}: the per-sub-sample collision probability is $q(H) =
+\binom{d-H}{w}/\binom{d}{w}$, acceptance is a binomial tail over $T$ masks, and both the achievable
+(FAR, FRR) pair and the minimum $T$ are functionals of the impostor Hamming law, and at the fixed mean
+$d/2$ that balance enforces, of its variance. Among balanced codes the minimum-variance one (impostor
+law $\to \mathrm{Binomial}(d,\tfrac12)$) minimises $T$ at any target and is error-optimal for the
+accept rule, and the balance-and-decorrelation objective training a quantisation-aware feature head is
+a differentiable relaxation of that discrete criterion. One better code improves both readings.
 
-\paragraph{The central observation.} The binariser is not a neutral adapter. Under FLPSI's
-sub-sample accept rule --- draw $T$ random $w$-position masks, accept once at least $t$ of
-them collide --- a single statistic of the code, the distribution of Hamming distances to
-\emph{impostor} codes, sets \emph{both} the false-accept rate at fixed $T$ \emph{and} the
-number of sub-samples $T$ the protocol must exchange to reach a target operating point.
-Accuracy and communication are therefore not independent knobs to be traded against one
-another; they are two readings of a single design objective: push the impostor-Hamming
-distribution toward the maximum-entropy $\mathrm{Binomial}(d,\tfrac12)$ that the protocol's
-own parameter choice assumes. A code that is bit-balanced and pairwise-decorrelated over
-impostors realises this objective; a code that is neither pays for it twice, once in error
-rate and once in bandwidth.
+We realise the objective with two binarisers and validate the coupling law end to end through the real
+FLPSI crypto binary, not a cost model. On SOCOFing the co-designed code cuts EER from $0.87\%$ to
+$0.17\%$ (about $5\times$; non-overlapping identity-bootstrap 95\% CIs across the difficulty ladder)
+and online communication by $45\%$ at a matched operating point on the same 128-bit backend; the
+impostor standard deviation collapses from $20.11$ toward the ideal $5.66$ and effective bits rise from
+roughly 10 to roughly 90 of 128.
 
-We formalise this as a coupling law and a theorem (stated in full, with proof, in
-\S\ref{sec:design}). The per-sub-sample collision probability at Hamming distance $H$ is
-$q(H) = \binom{d-H}{w}/\binom{d}{w}$, and acceptance is governed by a binomial tail over $T$
-independent masks; both the achievable (FAR, FRR) pair and the minimum $T$ needed to reach
-it are functionals of the impostor Hamming law alone, and, at fixed mean $d/2$ enforced by
-bit balance, of its \emph{variance} in particular. We show that among balanced codes, the
-one whose impostor Hamming distribution matches $\mathrm{Binomial}(d,\tfrac12)$ --- minimum
-impostor variance --- simultaneously minimises the number of sub-samples $T$ needed at any
-target operating point and is error-optimal for the sub-sample accept rule; and that the
-balance-and-decorrelation objective used to train a quantisation-aware feature head is
-precisely a differentiable relaxation of this discrete optimality criterion. One better code
-improves both readings at once.
+\paragraph{Contributions.} \textbf{(C1)} A privacy-preserving fingerprint design that replaces the
+homomorphic matcher with fuzzy-labelled PSI (client-side plaintext Siamese CNN, 128-bit code, FLPSI
+returning the matched label), removing the 117\,MB rotation key, the 512-user packing ceiling, and the
+3-server cluster for a 16\,B template; the extractor is inherited from Blind-Touch~\cite{ChoiWooKim24},
+so the contribution is the composition and the label-only disclosure model (\S\ref{sec:design}).
+\textbf{(C2)} A coupling theorem: the matcher's error and online communication are both functionals of
+one statistic, the impostor Hamming distribution, and the balanced, minimum-variance code is at once
+communication- and error-optimal for the accept rule, with the feature head's objective a
+differentiable relaxation of it, giving a matcher-agnostic design objective for any
+sub-sample/threshold fuzzy-PSI backend. \textbf{(C3)} Two binarisers for that objective, a training-free
+metric-aware bridge and a trained quantisation-aware feature head, both from standard
+learning-to-hash machinery with the objective they target being what is new. \textbf{(C4)} End-to-end
+measurements through the real FLPSI binary: SOCOFing EER $0.87\% \to 0.17\%$ (non-overlapping 95\% CIs),
+impostor $\sigma$ $20.11 \to 6.72$ (ideal $5.66$), effective bits $\sim\!10 \to \sim\!90$, communication
+$-45\%$ ($4317 \to 2377$\,KB at $N{=}5000$), and real crypto-binary TAR $97.0\%$ / FAR $0.80\%$ at
+$(6,3,18)$; the impostor-variance collapse (hence communication benefit) is universal across corpora
+while the accuracy benefit is gap-dependent (\S\ref{sec:eval}). \textbf{(C5)} A semi-honest security
+analysis and an assessment of the 16\,B stored code against ISO/IEC 24745: a per-enrolment XOR mask
+recovers unlinkability and renewability at zero accuracy cost but not irreversibility, which we state
+plainly, alongside two attacks we do not mitigate
+(\S\ref{sec:security})~\cite{ISO24745,GomezBarreroGalbally20}.
 
-\paragraph{What we build and find.} Neural-PSI is a two-party, label-only system: a Siamese
-CNN runs client-side in plaintext, its embedding is binarised to a 128-bit code, and FLPSI
-returns the matched label, never a similarity score. We realise the design objective above
-with two binariser instantiations and validate the coupling law end-to-end through the real
-FLPSI crypto binary, not a cost model. On SOCOFing, the co-designed code cuts equal-error
-rate from 0.87\% to 0.17\% (about $5\times$; $\approx 3\times$ at medium difficulty,
-$\approx 1.9\times$ at hard; non-overlapping identity-bootstrap 95\% confidence intervals
-across the altered-difficulty ladder) \emph{and} cuts online communication by 45\% at a
-matched operating point --- the same 128-bit backend, measured through the deployed Rust
-crypto binary. The impostor standard deviation collapses from $20.11$ toward the ideal
-$5.66$, and the code's effective bit count rises from roughly 10 to roughly 90 of its
-nominal 128.
-
-\paragraph{Contributions.}
-\begin{description}\itemsep2pt
-\item[C1.] A privacy-preserving fingerprint authentication design that replaces the
-homomorphic matcher with fuzzy-labelled PSI: a Siamese CNN runs client-side in plaintext,
-its embedding is binarised to a 128-bit code, and FLPSI returns the matched label rather
-than a similarity score. This removes the 117\,MB rotation key, the 512-user packing
-ceiling and the 3-server cluster; the server-side template is 16\,B
-(\S\ref{sec:design}). The extractor architecture is inherited from
-Blind-Touch~\cite{ChoiWooKim24}; the contribution is the composition and the label-only
-disclosure model, not the network.
-
-\item[C2.] A coupling theorem: the private matcher's error \emph{and} its online
-communication are both functionals of one code statistic, the impostor Hamming
-distribution, via the sub-sample accept rule; the balanced, minimum-impostor-variance code
-(impostor Hamming $\to$ $\mathrm{Binomial}(d,\tfrac12)$) is simultaneously
-communication-optimal and error-optimal for that rule, and the quantisation-aware feature
-head's training objective is a differentiable relaxation of this discrete criterion. The
-result is a \emph{matcher-agnostic design objective} for any sub-sample/threshold
-fuzzy-PSI backend (\S\ref{sec:design}).
-
-\item[C3.] Two binarisers realising the C2 objective as distinct actuators: a
-training-free metric-aware bridge (orthonormal projections plus magnitude thresholds) that
-corrects the distance \emph{geometry} the code preserves and drops in without retraining;
-and a trained quantisation-aware feature head that produces a balanced, decorrelated
-128-bit code from the extractor's high-dimensional features. Both are built from standard
-learning-to-hash machinery; the novelty is the objective they are pointed at, not the
-mechanism (\S\ref{sec:design}).
-
-\item[C4.] End-to-end measurements through the real FLPSI binary, not a cost model: SOCOFing
-EER $0.87\% \to 0.17\%$ ($\approx 5\times$; $\approx 3\times$ medium, $\approx 1.9\times$
-hard; non-overlapping identity-bootstrap 95\% CIs across the full altered-difficulty
-ladder), impostor $\sigma$ $20.11 \to 6.72$ (ideal $5.66$), effective bits
-$\sim\!10 \to \sim\!90$ of 128, online communication $-45\%$ at a matched operating point
-($4317 \to 2377$\,KB at $N{=}5000$), and real crypto-binary TAR $97.0\%$ / FAR $0.80\%$ at
-$(w,t,T){=}(6,3,18)$. Across corpora the impostor-variance collapse, and hence the
-communication benefit, is universal; the accuracy benefit is gap-dependent
-(\S\ref{sec:eval}).
-
-\item[C5.] A semi-honest security analysis --- ideal functionality, leakage function,
-simulators for both corruptions and a hybrid sequence --- together with an assessment of
-the stored 16\,B code against ISO/IEC 24745: a per-enrolment XOR mask recovers
-unlinkability and renewability at zero accuracy cost (XOR preserves Hamming distance)
-without delivering irreversibility, stated explicitly, alongside two attacks we do not
-mitigate (\S\ref{sec:security})~\cite{ISO24745,GomezBarreroGalbally20}.
-\end{description}
-
-\paragraph{What we do not claim.} We do not claim to beat compressed CKKS on raw bandwidth:
-Blind-Touch's 856\,KB per query is below our 2377\,KB; our $-45\%$ is measured against our
-\emph{own} baseline, narrowing the gap from roughly $9\times$ to roughly $2.8\times$, not a
-bandwidth win over homomorphic encryption. We do not claim the accuracy gain transfers to
-every corpus: it scales with the \emph{quantisation gap} between the float embedding and any
-128-bit code of it, and is marginal where the extractor, not the code, is the bottleneck, as
-on harder real-world corpora; the communication gain, by contrast, is universal in our
-measurements. SOCOFing is optimistic --- synthetic same-capture alterations --- and the
-$\approx 5\times$ figure is a \emph{relative} gain on the same corpus, extractor and backend
-as every baseline number we compare it to. We do not claim at-rest confidentiality against a
-compromised server, nor security against malicious adversaries; our proofs are semi-honest.
-And we are explicit about which of our two binarisers is which: the co-designed feature-head
-code is \emph{trained}, on an identity-disjoint split; the metric-aware bridge is
-training-free.
+\paragraph{What we do not claim.} We do not beat compressed CKKS on raw bandwidth: Blind-Touch's
+856\,KB per query is below our 2377\,KB, and the $-45\%$ narrows our own gap from $\sim9\times$ to
+$\sim2.8\times$ rather than reversing it. The accuracy gain does not transfer to every corpus: it scales
+with the quantisation gap between the float embedding and any 128-bit code of it, and is marginal where
+the extractor, not the code, is the bottleneck, though the communication gain is universal in our
+measurements. SOCOFing is optimistic (synthetic same-capture alterations), the $\approx 5\times$ is a
+\emph{relative} gain on one corpus/extractor/backend, and the proofs are semi-honest (no at-rest or
+malicious-adversary security).
