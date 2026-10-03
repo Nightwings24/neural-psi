@@ -29,8 +29,8 @@
 
 \begin{document}
 
-\title{Fuzzy-Labelled PSI for Biometric Authentication:\\
-       A Composition and Its Costs}
+\title{One Code, Two Objectives: Co-Designing Binary\\
+       Fingerprint Templates with the Private Matcher}
 
 \author{Anonymous Author}
 \authorrunning{Anonymous}
@@ -39,30 +39,36 @@
 \maketitle
 
 \begin{abstract}
-Privacy-preserving biometric authentication at scale is usually built on homomorphic
-encryption, which keeps templates encrypted but pays large key material and a structural
-packing ceiling. Fuzzy-labelled private set intersection (FLPSI) avoids both, but matches
-only binary strings under Hamming distance. We study what happens when the two halves are
-joined: a Siamese CNN feature extractor run locally in plaintext, a fixed public Super-Bit
-projection binarising its 16-dimensional embedding into a 128-bit code, and FLPSI as the
-matcher. We implement the composition and measure it on SOCOFing, where it reaches
-1.89\% equal-error rate (95\% CI [1.56, 2.20]) against a 0.33\% floating-point ceiling
-with 16-byte server-side
-templates and no 117\,MB rotation key. We then report what the composition costs. The
-central finding is a measurement: the FLPSI error analysis assumes impostor codes are
-uniform, but codes derived from a 16-dimensional embedding carry roughly 16 degrees of
-freedom, and their Hamming distribution has $3.6\times$ the assumed standard deviation
-while having \emph{exactly} the assumed mean --- so the discrepancy is invisible to any
-first-moment check. At the published parameters this makes the per-record false-accept
-rate $1{,}550\times$ larger than predicted, and no setting of the sub-sampling parameters
-repairs it, because distinct fingers collide on identical codes at a rate of
-$2.8\times10^{-6}$ that lower-bounds every parameterisation. We give the measured
-frontier, show multi-finger fusion is the only effective remedy, formalise the leakage
-with simulators for both corruptions, and show the stored code is a bearer credential
-failing all three ISO/IEC 24745 template-protection requirements.
+Privacy-preserving fingerprint authentication is usually built on homomorphic encryption
+(HE): the server matches over ciphertext, at the cost of a multi-server cluster, large
+evaluation keys, and a score-revealing interface. We instead realise it as a lightweight
+\emph{two-party} protocol: a CNN maps the fingerprint, in plaintext on the client, to a
+128-bit code, and Fuzzy-Labelled Private Set Intersection (FLPSI) returns \emph{only} the
+matched record's label. The accuracy of such a pipeline comes from the feature extractor,
+not the cryptography, so the binariser -- the map from a continuous embedding to the binary
+code the matcher consumes -- is the design's true lever. Our central result is that this
+lever is shared: the FLPSI acceptance rule
+$\Pr[\mathrm{Binom}(T,q(H)) \ge t]$, with $q(H)=\binom{d-H}{w}/\binom{d}{w}$, makes both the
+error rate \emph{and} the online communication (which scales with the subsample count $T$)
+functionals of the code's impostor-Hamming distribution. We prove that, among codes of mean
+$d/2$, the communication- and error-optimal one is the balanced, bit-decorrelated code whose
+impostor Hamming distribution approaches the maximum-entropy $\mathrm{Binom}(d,\tfrac12)$, and
+that a quantization-aware learned binariser is a differentiable relaxation of that optimum.
+We instantiate the objective with two binarisers on one 128-bit FLPSI backend. A training-free
+metric-aware code fixes the geometry an LSH baseline mis-assumed, cutting equal-error rate (EER)
+on held-out SOCOFing from $1.89\%$ to $0.87\%$; a quantization-aware feature-head then reaches
+EER $\mathbf{0.17\%}$ (95\% CI $[0.06,0.26]$), collapses the impostor Hamming standard deviation
+from $20.1$ to $6.72$ (ideal $5.66$), raises code utilisation from ${\sim}10$ to ${\sim}90$ of
+$128$ bits, and reaches a feasible operating point at which a loose baseline code is infeasible.
+We validate the operating point end-to-end through the real cryptographic binary
+(real TAR $97.0\%$, FAR $0.80\%$, matching the closed-form model). Generality tests on PolyU and
+FVC2002 confirm the predicted pattern: the impostor-distribution (hence communication) gain is
+universal, while the large accuracy gain is conditioned on a corpus where the extractor leaves a
+quantization gap. We give a semi-honest security analysis with simulators for both corruptions
+and assess the design against ISO/IEC 24745.
 
 \keywords{Private set intersection \and Biometric template protection \and
-Locality-sensitive hashing \and Secure computation \and ISO/IEC 24745.}
+Learning to hash \and Secure two-party computation \and ISO/IEC 24745.}
 \end{abstract}
 
 \input{sections/01-intro}

@@ -1,0 +1,20 @@
+{
+  "code": "feature-head-128",
+  "protocol": "real flash-psi fingerprint binary",
+  "op_point": {
+    "w": 6,
+    "t": 3,
+    "T": 18
+  },
+  "queries": 100,
+  "db": 100,
+  "seed": 0,
+  "real_TAR": 0.93,
+  "real_FAR": 0.00697,
+  "pred_FAR": 0.00753,
+  "gen_H_mean": 16.4,
+  "imp_H_mean": 64.2,
+  "confident_reject": "8388/8400",
+  "confident_accept": "62/62",
+  "note": "MEASURED regeneration; supersedes prose 96.7%/0.57% (that was a 60/100 mid-run snapshot). Larger-N run pending for tighter CI."
+}

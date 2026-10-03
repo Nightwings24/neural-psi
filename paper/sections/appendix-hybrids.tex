@@ -1,8 +1,10 @@
 \section{Full Hybrid Sequence}
 \label{app:hybrids}
 
-This appendix gives the two simulators of \S\ref{sec:security} in full and expands \S\ref{sec:hybrids} with the distinguisher reductions. Throughout,
-$\mathcal{D}$ is a distinguisher, $\mathsf{view}_i$ its view in $\mathsf{H}_i$, and
+This appendix gives the two simulators of \S\ref{sec:security} in full and expands
+\S\ref{sec:hybrids} with the distinguisher reductions, at the deployed operating point
+$(w,t,T) = (6,3,18)$ over $d = 128$-bit codes. Throughout, $\mathcal{D}$ is a distinguisher,
+$\mathsf{view}_i$ its view in $\mathsf{H}_i$, and
 $\varepsilon_i = |\Pr[\mathcal{D}(\mathsf{view}_{i-1}) = 1] - \Pr[\mathcal{D}(\mathsf{view}_i) = 1]|$.
 
 \subsection*{Simulators}
@@ -17,6 +19,8 @@ sender-side silent-VOLE transcript, and the polynomials $\{\hat z_i\}_{i \in [N]
 \item For each $i \in [N]$: if $i \in \mathsf{out}$, sample
       $\hat\ell'_i \leftarrow \mathbb{F}$ and a uniform polynomial $\hat f_i$ of degree
       $\le \theta - 1$ with $\hat f_i(0) = \hat\ell'_i$; otherwise set $\hat f_i = \bot$.
+      This $\hat f_i$ is the \emph{label-sharing} polynomial, distinct from the masking
+      polynomial $R$ used below --- see the remark at the end of this appendix.
 \item Build $\hat z_i$ by fixing its values on the $2T+1$ interpolation points: at points
       indexed by $j \in S_i$ (read from $\mathcal{L}_{\mathsf{C}}$) set
       $\hat z_i(x_j) = \hat f_i(x_j)$; at every other point sample uniformly from
@@ -34,7 +38,9 @@ the evaluation map on polynomials of degree $\le T$. The simulator therefore sam
 uniform polynomial of degree $\le T$ and outputs its evaluation vector, and simulates the
 silent-VOLE receiver messages with the base-VOLE simulator. Since $u'_0$ is uniform,
 $u_0 - u'_0$ is uniform \emph{in that subspace}, and the indistinguishability is
-statistical rather than computational.
+statistical rather than computational. This part of the argument does not depend on
+$(w,t,T)$ at all --- it depends only on $\deg R = T$, established below to hold by
+construction.
 
 \subsection*{Hybrid reductions}
 
@@ -44,21 +50,29 @@ $\mathcal{B}$ against semi-honest mOPRF security: $\mathcal{B}$ runs the rest of
 honestly, forwards its challenge transcript in place of the sub-protocol messages, and outputs
 $\mathcal{D}$'s guess. Hence $\varepsilon_1 \le \varepsilon_{\mathsf{mOPRF}}$.
 
-\paragraph{$\mathsf{H}_1 \to \mathsf{H}_2$ (PRF).} Replace $F_k$ by a uniformly random function.
-The reduction $\mathcal{B}$ queries its oracle wherever the protocol evaluates $F_k$. The query
-budget is the subtlety: each mask restricts the PRF input to a domain of size $2^{w}$, so a
-distinguisher may enumerate the entire input table of $T \cdot 2^{w}$ entries, and $\mathcal{B}$
-must be allowed that many oracle calls. With $w = 14$ and $T = 64$ this is $2^{20}$, giving
-$\varepsilon_2 \le \varepsilon_{F}(q + T \cdot 2^{w})$. Omitting this factor is the most common
-way to understate the bound for this construction.
+\paragraph{$\mathsf{H}_1 \to \mathsf{H}_2$ (PRF) --- constant recomputed at the deployed
+operating point.} Replace $F_k$ by a uniformly random function. The reduction $\mathcal{B}$
+queries its oracle wherever the protocol evaluates $F_k$. The query budget is the subtlety: each
+mask restricts the PRF input to a domain of size $2^{w}$, so a distinguisher may enumerate the
+entire input table of $T \cdot 2^{w}$ entries, and $\mathcal{B}$ must be allowed that many oracle
+calls. At the \emph{deployed} operating point $w = 6$, $T = 18$ this is
+\[
+T \cdot 2^{w} \;=\; 18 \cdot 2^{6} \;=\; 18 \cdot 64 \;=\; 1152 \;\approx\; 2^{10.2},
+\]
+giving $\varepsilon_2 \le \varepsilon_{F}(q + 1152)$. This replaces the earlier tuning's
+$w = 14$, $T = 64$ figure of $T \cdot 2^{w} = 2^{20}$, which is stale and must not be quoted for
+the deployed system: it belongs only to a discussion contrasting against that earlier,
+communication-heavier operating point. Omitting the $T \cdot 2^w$ factor at all --- charging the
+reduction only $q$ --- is the most common way to understate the bound for this construction,
+regardless of which operating point is in force.
 
 \paragraph{$\mathsf{H}_2 \to \mathsf{H}_3$ (VOLE).} Replace the vector ring-OLE sub-protocol with
 $\mathcal{F}_{\mathsf{VROLE}}$. Indistinguishability follows from base-VOLE security and the LPN
 assumption used by the silent extension~\cite{BoyleEtAl19,RindalSchoppmann21}, so
 $\varepsilon_3 \le \varepsilon_{\mathsf{VROLE}} + \varepsilon_{\mathsf{LPN}}$.
 
-\paragraph{$\mathsf{H}_3 \to \mathsf{H}_4$ (statistical masking).} For every non-colliding
-evaluation point $x_j$, replace
+\paragraph{$\mathsf{H}_3 \to \mathsf{H}_4$ (statistical masking) --- design constraint verified
+satisfied by construction.} For every non-colliding evaluation point $x_j$, replace
 $v_1(x_j) = f(x_j) + \bigl(\prod_i (x_j - \yt_i)\bigr) \cdot R(x_j)$
 by a uniform element of $\mathbb{F}$.
 
@@ -72,9 +86,19 @@ therefore jointly uniform, and the substitution is perfect, \emph{provided}
 \label{eq:h4app}
 |J| \;\le\; \deg R + 1 \;=\; T + 1 .
 \end{equation}
-Here $|J| \le T$ always, so~\eqref{eq:h4app} holds unconditionally --- but it is a design
-constraint, not an accident: it fails if $\deg R$ is reduced below $T$ while tuning the
-sub-sample count downward to save communication.
+Here $|J| \le T$ always, so~\eqref{eq:h4app} holds unconditionally given $\deg R = T$. This is a
+design constraint, not an accident, and we do not merely assert it: the masking polynomial $R$ is
+instantiated in the implementation with $\deg R$ set equal to the sub-sample count, so
+$\deg R = T$ by construction, at every operating point --- including the deployed $T = 18$, where
+constraint~\eqref{eq:h4app} reads $|J| \le 19$ and holds because $|J| \le T = 18$. We flag one
+important scoping note: this coupling is a property of the current implementation binding
+$\deg R$ to $T$, not a fact about the abstract protocol independent of that binding. If a future
+change were to reduce $\deg R$ \emph{independently} of $T$ --- for instance to save some other
+resource without also lowering the sub-sample count --- constraint~\eqref{eq:h4app} would no
+longer hold automatically and this hybrid step would need to be re-derived at the new degree. The
+communication-driven parameter search that took $T: 64 \to 18$ moved $\deg R$ together with $T$,
+so it does not endanger this step; we note the coupling explicitly so that it is checked again if
+$\deg R$ and $T$ are ever decoupled in a future revision.
 
 Applying this simultaneously at all $N$ records and all $2T+1$ points, the union bound over the
 event that any evaluation point coincides with a root gives
@@ -96,5 +120,14 @@ the shared $F_k$ once, so its cost is charged once rather than $N$ times, and $\
 applied simultaneously at all $N(2T+1)$ points under a single union bound. A per-record
 invocation of a single-instance theorem would not establish this, because correlated reuse across
 instances is precisely where such compositions fail.
+
+\paragraph{On the two polynomials.} The construction contains two polynomials that must not be
+conflated when reading the two paragraphs above. The label-sharing polynomial $f_i$ (used inside
+$\mathsf{Sim}_{\mathsf{C}}$'s step 2, and by the $t$-of-$T$ label-reconstruction protocol) has
+degree $\le \theta - 1$; it carries the secret-shared label and its degree is set by the
+reconstruction threshold, independent of $T$. The masking polynomial $R$ analysed in the
+$\mathsf{H}_3 \to \mathsf{H}_4$ step has degree $T$; it carries no label information and its sole
+role is to statistically hide non-colliding evaluation points. The $\deg R = T$ coupling
+established above concerns only the second polynomial.
 
 Summing the terms gives~\eqref{eq:bound}.

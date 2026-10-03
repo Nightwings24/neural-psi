@@ -2,18 +2,38 @@
 \label{sec:threat}
 
 \paragraph{Parties and inputs.} A \emph{client} device holds a freshly captured fingerprint and
-runs the feature extractor and quantiser locally, producing $\xt \in \{0,1\}^{d}$. A
-\emph{server} holds a database $D = \{(\yt_i, \ell_i)\}_{i \in [N]}$ of enrolled codes and their
-labels, plus a PRF key $k$. The client learns the labels of matching records; the server learns
-nothing. The ideal functionality realising this is stated as
-$\Fnpsi$ in \S\ref{sec:functionality}, and what the protocol leaks beyond it is stated as
-$\mathcal{L}$ in \S\ref{sec:leakage} --- we defer both to the security section so they can be
-read next to the proof.
+runs the feature extractor and quantiser locally, producing $\xt \in \{0,1\}^{d}$. The quantiser
+is a trained 128-bit head fitted on a disjoint identity split (\S\ref{sec:design}); the fitted
+constants ship beside the model, but the map itself, once fixed, is public, and evaluating it is a
+purely local, plaintext computation on the client. A \emph{server} holds a database
+$D = \{(\yt_i, \ell_i)\}_{i \in [N]}$ of enrolled codes and their labels, plus a single PRF key $k$
+shared across all records and sessions. The client learns the labels of every record accepted by
+$\Fnpsi$; the server learns nothing. The ideal functionality realising this is stated as $\Fnpsi$
+in \S\ref{sec:functionality}, and what the protocol leaks beyond it is stated as $\mathcal{L}$ in
+\S\ref{sec:leakage} --- we defer both to the security section so they can be read next to the
+proof.
 
-\paragraph{Adversary.} We assume a \emph{semi-honest} adversary with static corruption of one
-party: it follows the protocol but tries to infer more than its output. Malicious security is out
-of scope (\S\ref{sec:security}). We assume the standard LPN and PRF assumptions underlying the
-sub-protocols.
+\paragraph{Adversary.} We assume a \emph{semi-honest} (honest-but-curious) adversary with static
+corruption of exactly one party: it follows the protocol faithfully but tries to infer more than
+its prescribed output from its view. Malicious security --- a party that deviates from the
+protocol --- is out of scope; \S\ref{sec:security} sketches a low-effort upgrade path for the
+matching sub-protocol as future work.
+
+\paragraph{Cryptographic assumptions.} Security reduces to: PRF security of $F$; semi-honest
+security of the masked OPRF; semi-honest security of the vector ring-OLE backend; and the LPN
+assumption underlying its silent-VOLE extension. We use the FLPSI functionality and $t$-of-$T$
+accept model of Uzun et al.~\cite{UzunEtAl21}, realised with the efficient vector ring-OLE backend
+of Bui and Cong~\cite{BuiCong25}; the silent-VOLE base is that of
+Boyle et al.~\cite{BoyleEtAl19} and Rindal--Schoppmann~\cite{RindalSchoppmann21}.
+
+\paragraph{Channels and PKI.} Enrolment requires an \emph{authenticated} channel: if an attacker
+can enrol a chosen code under someone else's identity, no cryptographic property downstream helps
+(\S\ref{sec:attacks}). The online protocol requires an authenticated, confidential channel; the
+transcript itself reveals nothing beyond $\mathcal{L}_{\mathsf{C}}$ (\S\ref{sec:leakage}), but the
+credential response $\sigma$ of \S\ref{sec:whoauth} must be integrity-protected, since it is a
+long-lived credential once issued. We assume \emph{some} form of server authentication (a PKI or
+equivalent) so that the client is provably talking to the real matcher; this is a deployment
+assumption the protocol consumes but does not itself provide.
 
 \paragraph{Goals.}
 \begin{description}\itemsep2pt
@@ -25,23 +45,36 @@ sub-protocols.
       structural packing ceiling.
 \end{description}
 
-\paragraph{Deployment assumptions, stated explicitly.} Three assumptions do real work and are
-easy to leave implicit.
+\paragraph{Deployment assumptions, stated explicitly.} Two assumptions do real work and are easy
+to leave implicit.
 
 \emph{Sensor attestation.} The extractor and quantiser run on the client in plaintext by design.
-From the server's perspective $\xt$ is therefore a $d$-bit string the client chose, and nothing
-in the protocol binds it to a live finger. Deployments must attest the sensor; without that, the
-system's security is bounded by the code-guessing analysis of \S\ref{sec:attacks} rather than by
-biometric entropy.
+From the server's perspective $\xt$ is therefore a $d$-bit string the client chose, and nothing in
+the protocol binds it to a live finger. Deployments must attest the sensor; without that, the
+system's security is bounded by the code-guessing and record-replay analysis of
+\S\ref{sec:attacks} rather than by biometric entropy. We treat this as out of scope for the
+cryptographic argument, not as solved.
 
-\emph{Rate limiting.} Per-account \emph{and} per-relying-party limits are required. We show in
-\S\ref{sec:attacks} that they do not mitigate the strongest attack at large $N$, which succeeds
-on the first attempt; they are necessary, not sufficient.
+\emph{Rate limiting.} Per-account \emph{and} per-relying-party limits are required, and, at the
+deployed operating point of \S\ref{sec:params}, they are \emph{effective}: unlike the negative
+Super-Bit baseline this design is built to improve on, a single presentation of an unrelated
+finger is no longer accepted with near certainty at realistic database sizes. \S\ref{sec:attacks}
+quantifies the residual $1{:}N$ enumeration risk that rate limiting bounds rather than eliminates.
 
-\emph{Templates at rest.} The protocol protects data in transit. The stored code is a separate
-question with a worse answer, analysed against ISO/IEC 24745 in \S\ref{sec:atrest}. We treat full
-at-rest confidentiality against a compromised server as out of scope and state the resulting
-limitation plainly rather than resolving it.
-
-\paragraph{Out of scope.} Liveness detection and presentation-attack detection; malicious-model
-security; side channels on the client device; and availability.
+\paragraph{Out of scope.} We name each of the following rather than let it stay implicit, since
+naming a limitation precisely is more useful to a reviewer than eliding it.
+\begin{itemize}\itemsep2pt
+\item \textbf{Malicious adversaries.} A party that deviates from the protocol. \S\ref{sec:security}
+      sketches a future-work path.
+\item \textbf{At-rest server compromise.} The server stores $\yt_i$ in the clear; a database read
+      is total (\S\ref{sec:atrest}). Full at-rest confidentiality against a compromised server is
+      out of scope, and we state the resulting limitation plainly rather than resolving it inside
+      the protocol.
+\item \textbf{Input substitution / impersonation.} The quantiser runs client-side in plaintext, so
+      nothing in the protocol binds $\xt$ to a live finger. Presenting an unrelated finger, or
+      replaying a stolen stored code, is not prevented by the protocol; it is exactly the attack
+      analysed in \S\ref{sec:attacks} and is why sensor attestation is a deployment assumption
+      rather than a guarantee.
+\item \textbf{Liveness / presentation-attack detection.} Out of scope; requires sensor attestation.
+\item \textbf{Side channels on the client device, and availability/DoS.}
+\end{itemize}

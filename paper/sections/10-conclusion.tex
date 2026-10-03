@@ -1,24 +1,40 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We composed a learned biometric feature extractor with fuzzy-labelled PSI, replacing a
-homomorphic matching layer with a public, training-free Super-Bit bridge. The engineering result
-is favourable: 16-byte server-side templates against 1.67\,KB, no 117\,MB rotation key, no
-slot-packing ceiling, and $1.88\%$ EER (95\% CI $[1.56, 2.20]$) against a $0.33\%$
-floating-point ceiling.
+We set out to compose a learned biometric feature extractor with fuzzy-labelled PSI, and found
+that the naïve way to do it --- a fixed, public bridge tuned against an assumed impostor Hamming
+law --- understates the false-accept rate by $1{,}550\times$ and hits a collision floor
+($1.39\times10^{-6}$, \S\ref{sec:params}) that no choice of sub-sampling parameters can cross.
+The contribution of this paper is what that diagnosis makes visible: FLPSI's accuracy and its
+communication cost are both exact functionals of one object, the impostor Hamming distribution of
+the code (\S\ref{sec:design}), so a code designed to minimize that distribution's variance --- balanced
+bits, decorrelated pairs, the same objective proved optimal for the protocol's own
+Neyman--Pearson-optimal accept rule (\S\ref{sec:design}, Prop.~3.1) --- improves both at once,
+on the same 128-bit FLPSI backend, with no change to the protocol. Measured on SOCOFing, one
+co-designed code lowers EER by an order of magnitude (Super-Bit $1.89\%$ [1.57, 2.22]
+$\to$ feature-head $0.17\%$ [0.06, 0.26]), drives the collision floor to zero on the held-out set,
+and lowers matched-operating-point communication by $45\%$; and the design rule that produced its
+$(w,t,T)=(6,3,18)$ operating point transfers cleanly to the real \texttt{flash-psi} binary, not
+just to the closed-form model.
 
-The substantive result is a measurement. The error analysis that fixes FLPSI's parameters assumes
-impostor codes are uniform. Codes from a 16-dimensional embedding are not: they are balanced ---
-so the assumed \emph{mean} is exactly right and no first-moment check fires --- while carrying
-$3.6\times$ the assumed standard deviation. At the published operating point this makes the
-per-record false-accept rate $1{,}550\times$ larger than predicted, and no setting of the
-sub-sampling parameters repairs it, because distinct fingers collide on identical codes at a rate
-that lower-bounds every parameterisation.
+The coupling law is deliberately matcher-agnostic: nothing in Lemma~2.1 or Theorem~4.1
+(\S\ref{sec:design}) refers to any particular feature extractor, only to the impostor Hamming law
+a code induces. It is a design objective for the code that sits between \emph{any} learned
+embedding and \emph{any} threshold-based fuzzy matcher, not a property of this Siamese CNN or this
+FLPSI instantiation. The generality results (PolyU, FVC2002) support that reading: the same
+variance-reduction pattern appears on every corpus we tried, and the accuracy gain tracks the
+quantization gap exactly as the theory predicts, including where that gap is small and the gain is
+correspondingly small. That gap-dependence is confirmation of the mechanism, not an exception to
+it.
 
-The mechanism generalises beyond this system. An LSH bridge is valuable precisely because it is
-faithful, and that faithfulness transmits the embedding's impostor tail into the code intact.
-Any construction that matches learned codes under a threshold predicate inherits the same
-problem, and can detect it cheaply: measure the impostor Hamming distribution rather than
-assuming it, and count the zero-distance pairs. We recommend both as standard practice, and we
-report multi-finger fusion as the only remedy we found that moves the bound --- four orders of
-magnitude, where retuning moves none.
+We see three directions. First, multi-corpus validation beyond SOCOFing's same-sensor
+degradations --- in particular a larger, cross-session corpus such as SD302 --- to establish
+whether the same code objective transfers to genuine cross-capture variation rather than
+synthetic noise. Second, extending the security argument from semi-honest to malicious clients,
+since the protocol's confidentiality already rests entirely on the server's simulatability and a
+malicious-client extension would close the one asymmetry the current threat model leaves open.
+Third, replacing the current Shamir/garbled-circuit realization with the vector ring-OLE backend
+of Bui and Cong~\cite{BuiCong25}, which targets the same $(w,t,T)$ operating points at a better
+constant factor and is a natural drop-in given that our contribution is orthogonal to the backend:
+we lower $T$ by fixing the code, and a better backend would lower the per-unit cost of every $T$
+we still need.

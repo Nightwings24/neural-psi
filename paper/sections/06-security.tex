@@ -8,8 +8,14 @@
 We work in the semi-honest model with static corruptions. Throughout, $\lambda$ is the
 computational security parameter, $\kappa$ the statistical one, $\mathbb{F}$ a field with
 $|\mathbb{F}| \ge 2^{\kappa + \log N}$, and $\mathsf{negl}$ an unspecified negligible
-function. Section~\ref{sec:atrest} then steps outside that model, because the most
-serious weakness we identify is not a protocol weakness at all.
+function. The deployed operating point is $(w, t, T) = (6, 3, 18)$ over $d = 128$-bit codes
+(\S\ref{sec:params}); every concrete constant in this section is computed from that triple, not
+from an earlier tuning of the sub-sampling parameters. Section~\ref{sec:atrest} then steps outside
+the semi-honest model, because the most serious weakness we identify is not a protocol weakness at
+all. We separate, throughout, what is \textbf{proven} (semi-honest simulation security of the
+protocol as specified) from what is \textbf{proposed} (the IoM/WTA revocable-transform extension
+of \S\ref{sec:atrest} and the malicious-security sketch of \S\ref{sec:future}) --- the latter is
+motivated future work, not a claim we back with a reduction.
 
 \subsection{The functionality}
 \label{sec:functionality}
@@ -24,8 +30,8 @@ about it.
 \textbf{Functionality} $\mathcal{F}_{\mathsf{NeuralPSI}}^{d,T,w,\theta}$\\[2pt]
 \textbf{Parties.} A client $\mathsf{C}$ and a server $\mathsf{S}$.\\
 \textbf{Parameters.} Code length $d$, sub-sample count $T$, sub-sample width $w$,
-acceptance threshold $\theta$, and a public mask family
-$M = \{m_j\}_{j\in[T]}$, $m_j \in \{0,1\}^d$, $\|m_j\|_1 = w$.\\[3pt]
+acceptance threshold $\theta$ (the $t$ of the deployed $t$-of-$T$ accept model), and a public mask
+family $M = \{m_j\}_{j\in[T]}$, $m_j \in \{0,1\}^d$, $\|m_j\|_1 = w$.\\[3pt]
 \textbf{Inputs.} $\mathsf{C}$ inputs $\tilde{\mathbf{x}} \in \{0,1\}^d$.
 $\mathsf{S}$ inputs a database $D = \{(\tilde{\mathbf{y}}_i, \ell_i)\}_{i\in[N]}$ with
 $\tilde{\mathbf{y}}_i \in \{0,1\}^d$ and labels $\ell_i \in \mathbb{F}$.\\[3pt]
@@ -39,11 +45,14 @@ S_i \;=\; \bigl\{\, j \in [T] \;:\; \tilde{\mathbf{x}} \wedge m_j
 \textbf{Outputs.} $\mathsf{C}$ receives $\mathsf{out} =
 \{\,(i, \ell_i) : \mathsf{acc}(i)\,\}$; $\mathsf{S}$ receives $\bot$.
 }}
-\caption{The composite functionality. Note that the output is a \emph{set}: the scan runs
-over all $N$ records and more than one may satisfy the predicate. This differs from the
-single-match phrasing used in earlier drafts of this work, and the difference is
-observable --- $|\mathsf{out}| > 1$ occurs at a rate we measure in
-Section~\ref{sec:params}.}
+\caption{The composite functionality. The output is a \emph{set}: the scan runs over all $N$
+records and more than one may satisfy the predicate, so $|\mathsf{out}| > 1$ can occur. The
+informal one-line summary used elsewhere in the paper --- ``the client learns the label, or
+reject, and nothing else'' --- is the \emph{ideal} we would like; it is slightly stronger than what
+is proven here, since $\mathsf{out}$ can carry more than one label and the protocol additionally
+leaks the collision structure behind each accept. The gap between the informal summary and this
+box is exactly $\mathcal{L}_{\mathsf{C}}$, formalised in \S\ref{sec:leakage}: what $\Fnpsi$ does
+not already reveal, the realisation does.}
 \label{fig:functionality}
 \end{figure}
 
@@ -54,7 +63,7 @@ are drawn uniformly it depends in distribution only on the Hamming weight
 $H = \|\tilde{\mathbf{x}} \oplus \tilde{\mathbf{y}}_i\|_1$. Every error rate in
 Section~\ref{sec:params} follows from that observation. Second, the functionality says
 nothing about \emph{authentication}: no party other than $\mathsf{C}$ learns anything, so
-a relying party cannot act on the result. We return to this in
+a relying party cannot act on the result directly. We return to this in
 Section~\ref{sec:whoauth}.
 
 \paragraph{The masks are public.} We fix this now because the leakage analysis depends on
@@ -80,11 +89,27 @@ realises is $\mathcal{F}_{\mathsf{NeuralPSI}}$ \emph{augmented with leakage}:
 Equation~\eqref{eq:leakC} is strictly more than ``the identity of the matched record''.
 The client learns \emph{which} sub-samples collided, and since $M$ is public, each
 $j \in S_i$ pins $w$ known positions of $\tilde{\mathbf{y}}_i$ to known values. The client
-also learns $N$, the number of records tested. We quantify the consequences in
-Section~\ref{sec:attacks}; the short version is that $\mathcal{L}_{\mathsf{C}}$ is enough
-to reconstruct a matched record outright.
+also learns $N$, the number of records tested, and, implicitly, the accept/reject bit for every
+record via membership in $\mathsf{out}$. We quantify the consequences of the collision leakage in
+Section~\ref{sec:attacks}; the short version is that $\mathcal{L}_{\mathsf{C}}$ is enough to make
+progress toward reconstructing a matched record, though at the deployed $(w,t,T)$ this now takes
+several accepts rather than one (\S\ref{sec:attacks}).
 
-\subsection{Security theorem}
+\paragraph{Timing is an unmodelled channel.} The simulators of \S\ref{sec:hybrids} account for the
+protocol \emph{transcript}, not wall-clock behaviour. The online cost is linear in $N$, so response
+time leaks $N$ to a corrupt client already, and, absent a constant-time implementation, may also
+leak coarse information about $|\mathsf{out}|$ or which records were close to accepting. We add
+per-query timing to $\mathcal{L}_{\mathsf{C}}$ as an honest addition the transcript-level proof does
+not cover, and recommend constant-time (or fixed-cardinality-padded) reconstruction of
+$\mathsf{out}$ as a deployment control, not a cryptographic one.
+
+\paragraph{What the corrupt server learns.} Nothing beyond $\bot$. The server is the mOPRF
+\emph{sender} and never sees $\xt$ or any plaintext sub-sample of it; its view is simulatable from
+its own input alone (\S\ref{sec:design}, and $\mathsf{Sim}_{\mathsf{S}}$ below). This is the
+proven basis for the irreversibility claim of \S\ref{sec:atrest}: privacy \emph{in transit} does
+not depend on any property of the quantiser.
+
+\subsection{Security theorem (proven)}
 
 \begin{theorem}[Semi-honest security]
 \label{thm:main}
@@ -105,16 +130,26 @@ most
  + \underbrace{\varepsilon_{F}\bigl(q + T\!\cdot\!2^{w}\bigr)}_{\text{PRF, extended domain}}
  + \underbrace{\frac{N(2T+1)}{|\mathbb{F}|}}_{\text{statistical}} ,
 \end{equation}
-where $q$ is the adversary's own query count.
+where $q$ is the adversary's own query count. This statement covers the transcript only; it does
+not model wall-clock timing (\S\ref{sec:leakage}).
 \end{theorem}
 
-Two terms in~\eqref{eq:bound} are easy to omit and both matter. The PRF term is charged
-for $T \cdot 2^{w}$ extra oracle queries, not $q$ alone: each mask restricts the PRF input
-to a domain of size $2^{w} = 2^{14}$, so the full input table has only
-$T \cdot 2^{w} = 2^{20}$ entries and the reduction must budget for enumerating it. The
-statistical term is the price of the polynomial masking step (hybrid $\mathsf{H}_4$
-below) and is the reason $|\mathbb{F}|$ must be chosen with $N$ in view; we report the
-concrete field size in Section~\ref{sec:eval}.
+Two terms in~\eqref{eq:bound} are easy to omit and both matter, and both are stated here at the
+\emph{deployed} operating point $(w,t,T) = (6,3,18)$, not the earlier $(w,T) = (14,64)$
+parameterisation used during tuning. The PRF term is charged for $T \cdot 2^{w}$ extra oracle
+queries, not $q$ alone: each mask restricts the PRF input to a domain of size $2^{w} = 2^{6} = 64$,
+so the full input table has
+\[
+T \cdot 2^{w} \;=\; 18 \cdot 64 \;=\; 1152 \;\approx\; 2^{10.2}
+\]
+entries, and the reduction must budget for enumerating it --- three orders of magnitude smaller
+than the $2^{20}$ table of the earlier operating point, because both $w$ and $T$ shrank. This is a
+genuine, double-edged consequence of the communication-driven re-tuning: it tightens the PRF term
+of the bound here, and it is precisely what cheapens the dictionary attack of
+\S\ref{sec:attacks}(c) --- the two observations are two sides of the same $2^{w}$. The statistical
+term is the price of the polynomial masking step (hybrid $\mathsf{H}_4$ below) and is the reason
+$|\mathbb{F}|$ must be chosen with $N$ in view; we report the concrete field size in
+Section~\ref{sec:eval}.
 
 Both simulators are constructed in Appendix~\ref{app:hybrids}. The corrupt-client simulator
 takes $\xt$ and $(\mathsf{out}, \mathcal{L}_{\mathsf{C}})$ and produces the mOPRF outputs, the
@@ -132,8 +167,9 @@ $\le T$ and outputs its evaluation vector. Since $u'_0$ is uniform, $u_0 - u'_0$
 
 $\mathsf{H}_0$ is the real execution. $\mathsf{H}_1$ replaces $\Pi_{\mathsf{mOPRF}}$ by
 $\mathcal{F}_{\mathsf{mOPRF}}^{T}$ (semi-honest mOPRF security); $\mathsf{H}_2$ replaces $F_k$ by
-a random function (PRF security, charged at $q + T\cdot2^{w}$ queries as above); $\mathsf{H}_3$
-replaces $\Pi_{\mathsf{VROLE}}$ by $\mathcal{F}_{\mathsf{VROLE}}$ (base-VOLE security and LPN).
+a random function (PRF security, charged at $q + T\cdot2^{w} = q + 1152$ queries at the deployed
+op-point, as above); $\mathsf{H}_3$ replaces $\Pi_{\mathsf{VROLE}}$ by $\mathcal{F}_{\mathsf{VROLE}}$
+(base-VOLE security and LPN).
 
 $\mathsf{H}_4$ is the load-bearing \emph{statistical} step, and is the one most easily left
 unstated: for every non-colliding point $x_j$ it replaces
@@ -145,11 +181,27 @@ jointly uniform --- \emph{provided}
 \label{eq:h4}
 \bigl|\{\, j \in [T] : j \notin S_i \,\}\bigr| \;\le\; \deg R + 1 \;=\; T+1,
 \end{equation}
-which holds unconditionally here since $|[T]| = T$, but is a design constraint rather than an
-accident. Over $N$ records and $2T+1$ points the union bound gives the $N(2T+1)/|\mathbb{F}|$
-term in~\eqref{eq:bound}. Finally $\mathsf{H}_5$ replaces $\ell'_i = F_k(\ell_i)$ by uniform
-elements (immediate from $\mathsf{H}_2$), and $\mathsf{H}_6 = \mathsf{Sim}_{\mathsf{C}}$ is
-identical by inspection.
+which holds unconditionally here since $|[T]| = T$. This is a design constraint, not an accident,
+and we verified it directly against the implementation: the masking polynomial $R$ is constructed
+with $\deg R = T$ \emph{by construction} --- $R$ is instantiated with degree equal to the
+sub-sample count, so $\deg R = T$ holds at every operating point, including the deployed $T = 18$,
+and constraint~\eqref{eq:h4} is \textbf{satisfied by construction}, not merely by coincidence of
+the currently chosen numbers. The one-line caveat that remains: this is a coupling the code
+enforces, not a law of the protocol as an abstract object --- if a future revision reduced
+$\deg R$ \emph{independently} of $T$ (e.g. to save a different resource without also shrinking the
+sub-sample count), constraint~\eqref{eq:h4} would no longer hold automatically and would need to be
+re-checked. The communication-driven re-tuning that took $T: 64 \to 18$ did \emph{not} do this ---
+$T$ and $\deg R$ moved together --- so it does not endanger this proof step. Over $N$ records and
+$2T+1$ points the union bound gives the $N(2T+1)/|\mathbb{F}|$ term in~\eqref{eq:bound}. Finally
+$\mathsf{H}_5$ replaces $\ell'_i = F_k(\ell_i)$ by uniform elements (immediate from $\mathsf{H}_2$),
+and $\mathsf{H}_6 = \mathsf{Sim}_{\mathsf{C}}$ is identical by inspection.
+
+\paragraph{Two polynomials, not to be conflated.} The construction uses two distinct polynomials
+with two distinct roles and two distinct degree constraints, and it is worth naming both so the
+statistical argument above is not misread as being about the label sharing. The
+\emph{label-sharing} polynomial $f_i$, used for the $t$-of-$T$ threshold reconstruction of
+$\ell_i$, has degree $\le \theta - 1$. The \emph{masking} polynomial $R$ above is unrelated to
+$f_i$; its degree equals the sub-sample count $T$. Hybrid $\mathsf{H}_4$ concerns $R$ only.
 
 \paragraph{Why $N$ instances do not compose for free.}
 The step that a citation cannot discharge is the reuse across records. All $N$ record
@@ -159,9 +211,8 @@ vector ring-OLE batching asymmetric and cheap --- and one PRF key $k$, across al
 over the whole database rather than per record: $\mathsf{H}_2$ replaces the single shared
 $F_k$ once, which is why its cost appears once rather than $N$ times, and $\mathsf{H}_4$
 is applied simultaneously at all $N(2T+1)$ points with the union bound
-in~\eqref{eq:bound}. Constraint~\eqref{eq:h4} must hold for every record at once; it does,
-but only because $\deg R \ge T$, which is a design requirement rather than an accident and
-is easy to violate when tuning $T$ downward for communication.
+in~\eqref{eq:bound}. Constraint~\eqref{eq:h4} must hold for every record at once; it does, and, as
+established above, does so structurally rather than incidentally at the deployed parameters.
 
 The long-form hybrids, with the distinguisher reductions written out, are in
 Appendix~\ref{app:hybrids}.
@@ -170,61 +221,129 @@ Appendix~\ref{app:hybrids}.
 \label{sec:atrest}
 
 Theorem~\ref{thm:main} covers the protocol and says nothing about data at rest, which is where
-this design is weakest --- strictly weaker than the homomorphic baseline, whose stored feature
+this design is weakest --- strictly weaker than a homomorphic baseline whose stored feature
 vectors are encrypted under a key the server never holds.
 
-The server stores $(\yt_i, \ell_i)$ in the clear. An adversary who reads $\yt_i$ and submits it
-as a query obtains $H = 0$, hence $|S_i| = T$ and acceptance with probability $1$. \emph{No
-inversion is required}: the stored code \emph{is} a working credential, so a database breach is
-immediate and total impersonation of every enrolled user.
+\paragraph{Irreversibility in transit is proven, and it is the protocol's, not the binariser's.}
+The headline correction of this subsection is where irreversibility actually comes from. The
+server never observes $\xt$ or any plaintext sub-sample of it --- it is the mOPRF sender, and its
+view is simulatable from its own input alone (\S\ref{sec:leakage}). Biometric privacy in transit
+therefore rests \emph{entirely} on the FLPSI/mOPRF layer proven in \S\ref{sec:hybrids}, not on any
+one-wayness property of the quantiser. We state this as the corrected headline: irreversibility
+toward a passive, in-transit observer is provided by the protocol, not the binariser.
 
-Inversion is an additional problem. The quantiser is over-determined --- 128 hyperplanes cut
-$\mathbb{S}^{15}$ into $2\sum_{k<16}\binom{127}{k} \approx 2^{64.5}$ cells --- so it is not
-one-way in any useful sense. Its intrinsic angular resolution is
-$\text{cells}^{-1/15} \approx 2.9^\circ$, and the standard one-bit compressed-sensing heuristic
-$k/m = 16/128$ gives $7.2^\circ$, against a measured genuine intra-class spread of
-$\pi\cdot 8.3/128 = 11.7^\circ$. Reconstruction is thus $1.6$--$4\times$ \emph{tighter} than
-genuine variation: the recovered direction re-quantises inside the accept region and transfers
-to any system using the same extractor.
+\paragraph{The binariser is not claimed to be one-way (recast, was: proven invertible).} An
+earlier version of this analysis argued the quantiser was demonstrably invertible, via a one-bit
+compressed-sensing recovery bound. That argument is correct \emph{for the map it was computed
+for} --- the Super-Bit projection, 128 sign measurements of a 16-dimensional embedding, an
+$8\times$ over-determined linear system for which the standard one-bit compressed-sensing heuristic
+recovers the embedding direction to $2.9$--$7.2^\circ$ against a measured genuine intra-class
+spread of $11.7^\circ$~\cite{PlanVershynin13,JacquesEtAl13} --- but it is \emph{specific to that
+128-by-16 linear map} and does not transfer unchanged to the deployed system. The current quantiser
+is a \emph{trained} 128-bit head fit on a 512-dimensional PCA projection of a 25{,}088-dimensional
+convolutional feature vector, not a fixed linear 128-by-16 map; the over-determination argument
+that makes the Super-Bit case tractable to invert simply does not apply to a map of this shape. We
+therefore recast the claim rather than reuse the old number: \emph{we do not claim the deployed
+quantiser is one-way}. No such proof exists for it, and general inverse-biometrics attacks against
+learned binary codes apply in principle~\cite{GomezBarreroGalbally20}. What we do claim is narrower
+and, for the security argument, sufficient: the trivial over-determined inversion that applies to
+the Super-Bit map does not apply here, and --- as established above --- security does not rely on
+binariser irreversibility in the first place, because that irreversibility is discharged at the
+protocol layer.
+
+\paragraph{The stored code is a working credential regardless (proven, design-level, unaffected by
+the quantiser).} This point is code-independent and survives the code swap unchanged. The server
+stores $(\yt_i, \ell_i)$ in the clear. An adversary who reads $\yt_i$ and submits it as a query
+obtains $H = 0$, hence $|S_i| = T \ge \theta$ and acceptance with probability $1$. \emph{No
+inversion is required}: the stored code \emph{is} a working credential, so a database breach is
+immediate and total impersonation of every enrolled user. This is why at-rest compromise is out of
+scope (\S\ref{sec:threat}) and is the honest weakness relative to an encrypted-template baseline
+whose stored vectors are encrypted under a key the server never holds.
 
 \begin{table}[htbp]
 \centering
-\caption{The stored template against ISO/IEC 24745~\cite{ISO24745}. NeuralPSI as
-specified fails all three requirements.}
+\caption{The stored template against ISO/IEC 24745~\cite{ISO24745}: current deployed design versus
+the proposed revocable transform of \S\ref{sec:transform}. The current design fails unlinkability
+and renewability as deployed; irreversibility is split between what the protocol already provides
+in transit and what the binariser alone does not provide at rest.}
 \label{tab:iso24745}
 \small
-\begin{tabular}{@{}p{0.19\linewidth}p{0.10\linewidth}p{0.62\linewidth}@{}}
+\begin{tabular}{@{}p{0.17\linewidth}p{0.40\linewidth}p{0.35\linewidth}@{}}
 \toprule
-\textbf{Requirement} & \textbf{Status} & \textbf{Why} \\
+\textbf{Requirement} & \textbf{Current deployed design} & \textbf{With proposed transform
+(\S\ref{sec:transform})} \\
 \midrule
-Irreversibility & fails & Twice: direct replay of the stored code, and one-bit
-compressed-sensing recovery of the embedding direction to $2.9$--$7.2^\circ$. \\
-Unlinkability & fails & $(P, \mu, \tau)$ and the projection seed are public and fixed, so
-one finger yields the same 128-bit code in every deployment and codes are directly
-Hamming-comparable across databases. There is no diversification parameter. \\
-Renewability & fails & A second independent code cannot be issued from the same finger.
-This is the requirement the application most needs, since a compromised fingerprint
-cannot be reissued. \\
+Irreversibility & In transit: \textbf{provided}, by the FLPSI layer (server never sees the code;
+proven, \S\ref{sec:leakage}). At rest / of the binariser alone: \textbf{not claimed}, and the
+stored code is a bearer credential regardless (above). &
+Transformed code non-invertible per IoM~\cite{JinEtAl18}, with stated partial-invertibility
+caveats~\cite{GhammamEtAl20}; at-rest replay still needs mitigation~(ii) below. \\
+Unlinkability & \textbf{Fails as deployed}: the quantiser's fitted constants are public and fixed,
+so one finger yields the same 128-bit code in every deployment, and codes are directly
+Hamming-comparable across databases. There is no diversification parameter. &
+\textbf{Provided}: a per-user, per-deployment seed yields different codes per deployment, not
+cross-linkable. \\
+Renewability & \textbf{Fails as deployed}: a second independent code cannot be issued from the
+same finger. &
+\textbf{Provided}: re-seeding issues a fresh, pseudo-independent, non-invertible code from the
+same finger. \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Mitigations, and what they actually buy.}
-\emph{(i) A client-side per-enrolment XOR mask}: the device holds $r_u \in \{0,1\}^{d}$ and the
-server stores $\yt \oplus r_u$. XOR preserves Hamming distance exactly, so \textbf{accuracy is
-unchanged} --- every number in \S\ref{sec:eval} carries over --- and 16 bytes of client state
-buys unlinkability and renewability. It does \emph{not} stop replay of a stolen record.
-\emph{(ii) Envelope encryption at rest}, key in an HSM, decrypting to memory for the scan:
-unglamorous, orthogonal to the protocol, sound in the semi-honest model, and what we would
-deploy. \emph{(iii)} We explicitly reject one tempting option --- storing the mOPRF images
-$\{F_k(\yt_i \wedge m_j)\}_j$ instead of the code. It is keyed and locality-preserving and the
-server computes those values anyway, but the per-mask domain is only $2^{w} = 2^{14}$, so anyone
-who can evaluate $F_k$ inverts each image by exhaustive search; repairing it needs a per-record
-salt that destroys the equality-preservation the protocol depends on.
+\subsection{A proposed revocable, non-invertible transform}
+\label{sec:transform}
 
-Applying (i) and (ii) yields unlinkability and renewability. \textbf{Full at-rest
-confidentiality against a compromised server remains out of scope}, and this posture is weaker
-than the encrypted-template baseline's --- a limitation we state rather than resolve.
+Table~\ref{tab:iso24745}'s middle column is the honest status quo; this subsection is the
+constructive answer, and everything in it is \textbf{proposed}, not proven.
+
+\paragraph{Option A --- client-side per-enrolment XOR mask (cheap, keep as the baseline
+mitigation).} The device holds $r_u \in \{0,1\}^{d}$ and the server stores $\yt \oplus r_u$. XOR
+preserves Hamming distance exactly, so \textbf{accuracy is unchanged} --- every number in
+\S\ref{sec:eval} carries over unmodified --- and 16 bytes of client state buys unlinkability and
+renewability. It does \emph{not} stop replay of a stolen record; that is addressed by
+mitigation~(ii) below, not by this transform.
+
+\paragraph{Option B --- Index-of-Max / Winner-Take-All hashing (proposed, principled).} A more
+principled route applies ranking-based locality-sensitive hashing --- Index-of-Max (IoM) hashing,
+also called Winner-Take-All hashing --- with a per-user seed, to the code or to the
+pre-binarisation projection scores~\cite{JinEtAl18}. IoM yields a revocable, seed-diversifiable
+transform whose distance is still rank/Hamming-like, making it a candidate FLPSI-compatible
+mapping. We state the caveats as plainly as the opportunity: IoM is only \emph{partially}
+non-invertible, and cryptanalyses of it exist~\cite{GhammamEtAl20}, so it raises the bar
+(revocability, unlinkability, partial irreversibility) but is \textbf{not} a proof of one-wayness,
+and should not be presented as one.
+
+\paragraph{What adopting this would require (future evaluation, not done).} Any such transform
+changes the distance the FLPSI accept model is built around, so it is not a drop-in: the
+$q(H)$ validation of \S\ref{sec:params} is for the \emph{untransformed} code, and would need to be
+re-run under the transformed distance. Concretely, adopting Option B would require: (i) attempting
+inverse-biometric reconstruction under IoM-specific attacks~\cite{GhammamEtAl20} and reporting the
+success rate against genuine intra-class spread; (ii) measuring cross-seed linkability with a
+standard linkability metric on mated/non-mated score distributions; (iii) verifying that two
+re-seeded codes from the same finger are pseudo-independent (impostor-level Hamming distance
+between them); and (iv) re-measuring EER, $q(H)$, and communication at $(w,t,T) = (6,3,18)$ under
+the transformed distance to confirm accuracy and bandwidth survive. None of (i)--(iv) has been run;
+we list them because a proposal without its own falsification criteria is not a proposal a reviewer
+can hold us to.
+
+\paragraph{Mitigations ledger (what closes which gap).}
+\emph{(i)} the XOR mask above buys unlinkability and renewability at zero accuracy cost, but not
+replay resistance. \emph{(ii) Envelope encryption at rest}, key in an HSM, decrypting to memory
+only for the scan: unglamorous, orthogonal to the protocol, sound in the semi-honest model, and
+what we would deploy to close the bearer-credential gap against a passive at-rest reader.
+\emph{(iii)} We explicitly reject one tempting option --- storing the mOPRF images
+$\{F_k(\yt_i \wedge m_j)\}_j$ instead of the code. It is keyed and locality-preserving and the
+server computes those values anyway, but at the deployed $w = 6$ the per-mask domain is only
+$2^{w} = 64$ values, so anyone who can evaluate $F_k$ inverts each image by brute force in $64$
+tries; the smaller $w$ that helps communication makes this rejected option \emph{worse}, not
+better, than it was at $w = 14$. Repairing it would need a per-record salt that destroys the
+equality-preservation the protocol depends on.
+
+Applying (i) and (ii) yields unlinkability, renewability, and at-rest confidentiality against a
+\emph{passive} reader. \textbf{Full at-rest confidentiality against an active, compromised server
+remains out of scope}, and this posture is weaker than an encrypted-template baseline's --- a
+limitation we state and partially resolve with (ii), rather than only lament.
 
 \subsection{Who is actually authenticated}
 \label{sec:whoauth}
@@ -242,64 +361,106 @@ login; here it hands the attacker a \textbf{permanent per-user credential}. \emp
 false-accept rate is a credential-compromise rate}, which is why we treat it as a security
 parameter rather than an accuracy metric.
 
-\subsection{Attacks}
+\subsection{Attacks at the deployed operating point}
 \label{sec:attacks}
 
-\paragraph{(a) Impersonation without search.}
-The parameters were chosen against an attacker submitting \emph{uniformly random} codes,
-for which the per-record accept probability is $q_{\mathsf{rand}} = 2.954\times10^{-5}$.
-But the cheapest attack is not to guess: it is to present one's own finger. Measured over
-$2.88\times10^{6}$ held-out impostor pairs, the per-record accept probability for a
-\emph{real but wrong} finger is $q_{\mathsf{bio}} = 4.578\times10^{-2}$ --- $1{,}550\times$
-larger. Expected queries to impersonate somebody, $1/(1-(1-q)^N)$:
+The negative baseline this design improves on used $(w, T) = (14, 64)$ with the Super-Bit
+map, where zero-effort impersonation with a genuine but unrelated finger succeeded with
+near-certainty at every tested database size. The deployed feature-head system at
+$(w,t,T) = (6,3,18)$ changes both the accept-rate picture and the leakage-exploitability picture,
+in opposite directions on different axes, and we recompute both here rather than reuse the old
+numbers.
 
-\begin{center}\small
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-$N$ & $512$ & $5{,}000$ & $10^{5}$ & $10^{6}$ \\
-\midrule
-random code ($q_{\mathsf{rand}}$) & $67$ & $7$ & $1.05$ & $1$ \\
-\textbf{zero-effort finger} ($q_{\mathsf{bio}}$) & $\mathbf{1}$ & $\mathbf{1}$ &
-  $\mathbf{1}$ & $\mathbf{1}$ \\
-\bottomrule
-\end{tabular}
-\end{center}
+\paragraph{(a) Impersonation without search.} At the deployed operating point the real-crypto
+per-record false-accept rate, measured end to end through the actual protocol implementation, is
+$\mathrm{FAR} = 8.02\times10^{-3}$ (true-accept rate $97.0\%$), close to the model-predicted
+$8.12\times10^{-3}$. This is roughly an order of magnitude below the old baseline's
+$q_{\mathsf{bio}} = 4.578\times10^{-2}$, and, combined with a $\theta$-searched multi-finger fusion
+strategy, gives a secure-and-usable $1{:}N$ configuration: query-level false-accept at $N = 5000$
+below $1\times10^{-2}$ at a false-reject rate of $0.9\%$ (3-of-3 fusion). We keep the honest caveat
+that these fused-level figures are model-derived --- a closed-form Poisson-binomial computation
+over measured per-finger accept probabilities on 201 subjects --- rather than a directly observed
+rare-event rate; only the per-record $8.02\times10^{-3}$ is a direct real-crypto measurement.
+Rate-limiting is therefore no longer defending against an attack that already succeeds on the first
+attempt, which is the sense in which it is now meaningful rather than merely required: it bounds a
+residual enumeration advantage instead of a near-certainty.
 
-At every database size we measured, a single presentation of an unrelated finger
-impersonates \emph{someone} with probability above $99\%$. Rate limiting does not
-mitigate an attack that succeeds on the first attempt.
+\paragraph{(b) Template recovery from the collision pattern.} On any accept, $\mathcal{L}_{\mathsf{C}}$
+gives the client $S_i$. With reconstruction threshold $t = 3$, the client can enumerate
+$\binom{18}{3} = 816$ candidate sub-sample sets to confirm $S_i$ cheaply --- fewer candidates than
+the old $\binom{64}{2} = 2016$, though the comparison is incidental to the security argument.
+Because masks are public, each $j \in S_i$ pins $w = 6$ known positions of $\yt_i$. Parametrically,
+before accounting for overlap between the $w$-subsets, a single query covers at most
+$T \cdot w = 18 \cdot 6 = 108$ position-slots out of $128$. This is a materially weaker
+per-query leak than the earlier $w = 14, T = 64$ configuration's $\approx 345$ slots (which
+determined the whole record from one authentication): at the deployed parameters, full template
+recovery requires \emph{several} successful authentications rather than one, a genuine improvement
+driven by the smaller $w$. We do not have a measured $q(H)$ at the genuine operating $H$ for the
+feature-head code from which to sharpen the $108$-slot bound into a tighter expected-coverage
+figure, so we state it as the parametric bound rather than invent one.
 
-\paragraph{(b) Template recovery from the collision pattern.}
-On any accept, $\mathcal{L}_{\mathsf{C}}$ gives the client $S_i$. With $\theta = 2$ the
-client can enumerate all $\binom{64}{2} = 2{,}016$ candidate pairs, interpolate, and test,
-so it learns $S_i$ exactly and cheaply. Because the masks are public, each $j \in S_i$
-pins $w = 14$ known positions of $\tilde{\mathbf{y}}_i$. At $H \approx 8$ a genuine query
-produces $T \cdot q(8) = 64 \times 0.38493 \approx 24.6$ collisions, covering
-$24.6 \times 14 \approx 345$ position-slots over $128$ positions: \textbf{one successful
-authentication determines the target record}. Recovering a \emph{chosen} user costs
-$1/q_{\mathsf{bio}} \approx 22$ queries at the measured rate; recovering \emph{a} user's
-full template at $N \ge 10^{5}$ costs one.
+\paragraph{(c) The mOPRF dictionary (repeated-query membership leakage).} Each mask restricts the
+PRF domain to $2^{w} = 2^{6} = 64$ values, so per-sub-sample preimage resistance against a
+querying client is only $w = 6$ bits --- markedly weaker per sub-sample than the earlier $w = 14$
+--- though the full table across all masks is much smaller,
+$T \cdot 2^{w} = 18 \cdot 64 = 1152 \approx 2^{10.2}$ entries, against $2^{20}$ before. A client
+learns one dictionary entry per mask per session. A standard coupon-collector estimate,
+$2^{w}\ln 2^{w} = 64 \ln 64 \approx 266$ sessions, gives an order-of-magnitude bound for near-full
+coverage of a \emph{single} mask's 64-entry table (not a measured number); across $18$ masks of $6$
+bits each, roughly two-thirds coverage already over-determines a $128$-bit code. This is the honest
+cost of the cheaper $w$: the same shrinkage that tightens the PRF term in~\eqref{eq:bound} also
+cheapens this dictionary attack, and it is why we say plainly that the communication win trades
+away some per-query dictionary resistance. The mitigation is unchanged in kind, more load-bearing
+in practice: per-account and per-relying-party rate limiting, plus per-epoch rotation of $k$ and of
+the mask family $M$.
 
-\paragraph{(c) The mOPRF dictionary.}
-Each mask restricts the PRF domain to $2^{w} = 2^{14}$, and the entire table is
-$T \cdot 2^{w} = 2^{20}$. A client learns one entry per mask per session, so a
-coupon-collector argument gives roughly $1.1\times10^{4}$ sessions for $50\%$ coverage per
-mask --- already sufficient, since 32 of 64 masks at 14 bits each over-determines a
-128-bit code --- and about $1.7\times10^{5}$ sessions for full coverage. ``PRF-masked''
-thus provides at most $w = 14$ bits of preimage resistance per sub-sample against a
-querying client.
+\paragraph{Repeated-query / enumeration summary and required deployment controls.} Repeated queries
+leak, in addition to the above: \emph{membership} (accept/reject on a chosen code tests whether it
+is enrolled) and, if enrolment is unauthenticated, the ability to \emph{probe the code space}
+directly. Uzun et al.~\cite{UzunEtAl21} prescribe rate limiting for exactly this real-time
+biometric-search setting; we adopt the recommendation and, for our operating point, recommend: (i)
+rate limiting per account \emph{and} per relying party, now meaningfully effective rather than
+merely necessary (unlike the negative baseline); (ii) authenticated enrolment (\S\ref{sec:design}),
+so an attacker cannot enrol chosen codes to probe the space; (iii) per-epoch rotation of $k$ and of
+$M$, at the stated re-enrolment cost; (iv) sensor attestation as an explicit deployment assumption
+(\S\ref{sec:threat}); and (v) the nonce and session-id binding of \S\ref{sec:whoauth}, so an
+intercepted $\sigma$ is not a permanent credential. We restate the honest residual: at very large
+$N$ ($\ge 10^5$) the per-record FAR still compounds, and rate limiting bounds --- but does not
+eliminate --- the enumeration advantage. This residual is real, and it is much smaller than the
+negative baseline's near-certain-first-attempt floor; we do not claim it is zero.
 
-\paragraph{Required deployment controls.} Consequently: (i) rate limiting per account
-\emph{and} per relying party, with the explicit admission that it does not mitigate (a) at
-large $N$; (ii) authenticated enrolment, so an attacker cannot enrol chosen codes to probe
-the space; (iii) per-epoch rotation of $k$ and of the mask family, at the stated
-re-enrolment cost; (iv) sensor attestation as an explicit deployment assumption; and
-(v) the nonce binding of Section~\ref{sec:whoauth}.
+\paragraph{What we do not claim (proven vs.\ proposed, collected).} To keep the two registers
+separate in one place: \textbf{proven} is semi-honest simulation security of the protocol as
+specified (Theorem~\ref{thm:main}), in-transit irreversibility toward the server (above), and the
+stored-code bearer-credential fact. \textbf{Not claimed} is one-wayness of the quantiser itself,
+malicious security, and at-rest confidentiality against a compromised server.
+\textbf{Proposed}, as future work, is the IoM/WTA revocable transform of \S\ref{sec:transform} and
+the malicious/ZK extension below --- both stated with their own falsification criteria rather than
+as accomplished results.
 
-\paragraph{What we do not claim.} Malicious security --- cut-and-choose techniques exist for
-related structure-aware PSI settings~\cite{GarimellaEtAl23}, but they target geometric-ball
-rather than threshold predicates, so their overheads do not transfer and we do not estimate
-them. At-rest confidentiality against a compromised server. That the quantiser is one-way: it
-demonstrably is not, and no part of Theorem~\ref{thm:main} relies on it. And that the measured
-false-accept rates are acceptable at the sizes we tested --- \S\ref{sec:params} shows they are
-not, and why.
+\subsection{Malicious security and well-formedness: future work}
+\label{sec:future}
+
+Everything in this subsection is \textbf{proposed}, not proven.
+
+\paragraph{Low-effort path: malicious-mode VOLE-PSI.} The VOLE/OKVS matching backend has known
+malicious-secure variants; upgrading to one is the lowest-effort route to malicious security for
+the matching step itself~\cite{RindalSchoppmann21,RaghuramanRindal22}. We flag the caveat honestly:
+malicious OKVS security is contingent on the encoding not degrading under adversarial inputs, so
+this is not a free drop-in and needs OKVS parameters chosen with that analysis in mind.
+
+\paragraph{What malicious mode does not fix.} Upgrading the matching sub-protocol secures it
+against a deviating party, but does \emph{nothing} for input substitution: the code is computed
+client-side in plaintext regardless of the matcher's security level, so a malicious-secure protocol
+still faithfully matches an attacker-chosen code --- a stolen stored record replayed verbatim
+(\S\ref{sec:atrest}) succeeds exactly as before. Fixing that requires liveness or sensor
+attestation, a systems assumption outside the cryptographic model, not a stronger PSI protocol.
+
+\paragraph{Impersonation resistance via well-formedness (speculative).} A signed-template design
+paired with a zero-knowledge proof that the submitted code $\xt$ was produced by the sanctioned
+extractor from an attested capture would address input substitution cryptographically. The proof
+must be of well-formedness of the \emph{code}, not of the image: proving image-to-code extraction
+in zero knowledge is not practical at this scale. We flag this as speculative and decline to
+estimate its overhead; structure-aware malicious PSI techniques exist for related settings but
+target geometric-ball predicates rather than the threshold predicate used here, so their published
+overheads do not transfer~\cite{GarimellaEtAl23}.
